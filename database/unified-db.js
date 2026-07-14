@@ -1,0 +1,379 @@
+/**
+ * UNIFIED DATABASE WRAPPER
+ * Automatically routes to Google Drive or Local Storage
+ * Based on connection status
+ */
+
+const localDb = require('../db');
+const googleDriveStorage = require('./google-drive-storage');
+
+class UnifiedDatabase {
+    constructor() {
+        this.storageType = 'local';
+        this.ready = this._tryAutoConnect();
+        this.dbReady = this.ready; // Compatibility with server.js
+    }
+
+    /**
+     * Proxy to localDb.data for compatibility with existing code
+     */
+    get data() {
+        return localDb.data;
+    }
+
+    /**
+     * Proxy save for compatibility
+     */
+    save() {
+        if (this.storageType === 'local') {
+            return localDb.save();
+        }
+        // For Google Drive, we save individually in methods
+    }
+
+    async _tryAutoConnect() {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const credPath = path.join(__dirname, '..', 'drive-credentials.json');
+
+            if (fs.existsSync(credPath)) {
+                console.log('🔄 Found Google Drive credentials, connecting...');
+                const credentials = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+                const result = await this.connectGoogleDrive(credentials);
+                if (result.success) {
+                    console.log('✅ Auto-connected to Google Drive');
+                } else {
+                    console.error('❌ Failed to auto-connect to Drive:', result.message);
+                }
+            }
+        } catch (e) {
+            console.error('Auto-connect error:', e.message);
+        }
+    }
+
+    /**
+     * Connect to Google Drive
+     */
+    async connectGoogleDrive(credentials) {
+        const result = await googleDriveStorage.connect(credentials);
+        if (result.success) {
+            this.storageType = 'google_drive';
+        }
+        return result;
+    }
+
+    /**
+     * Disconnect from Google Drive
+     */
+    async disconnectGoogleDrive() {
+        const result = await googleDriveStorage.disconnect();
+        if (result.success) {
+            this.storageType = 'local';
+        }
+        return result;
+    }
+
+    /**
+     * Migrate data from local to Google Drive
+     */
+    async migrateToGoogleDrive() {
+        if (this.storageType !== 'google_drive') {
+            throw new Error('Google Drive not connected');
+        }
+
+        // Get local database path
+        const dbPath = require('path').join(__dirname, '..', 'database.json');
+
+        // Migrate
+        const result = await googleDriveStorage.migrateFromLocal(dbPath);
+
+        if (result.success) {
+            // Clear local database after successful migration
+            await this.clearLocalDatabase();
+        }
+
+        return result;
+    }
+
+    /**
+     * Clear local database (keep only minimal config)
+     */
+    async clearLocalDatabase() {
+        const fs = require('fs').promises;
+        const dbPath = require('path').join(__dirname, '..', 'database.json');
+
+        // Keep minimal structure
+        const minimalDb = {
+            users: {},
+            emailServices: {},
+            gmails: [],
+            settings: localDb.getSettings(),
+            promoCodes: {},
+            migrated: true,
+            migratedAt: Date.now()
+        };
+
+        await fs.writeFile(dbPath, JSON.stringify(minimalDb, null, 2));
+    }
+
+    /**
+     * Get users as array
+     */
+    async getUsers() {
+        const usersObj = await this.getUsersObj();
+        return Object.values(usersObj || {});
+    }
+
+    /**
+     * Get users as object
+     */
+    async getUsersObj() {
+        await this.ready;
+        if (this.storageType === 'google_drive') {
+            return await googleDriveStorage.loadData('users.json') || {};
+        } else {
+            // localDb is the Database instance from db.js
+            return localDb.data.users || {};
+        }
+    }
+
+    /**
+     * Get user by ID
+     */
+    async getUser(userId) {
+        await this.ready;
+        const usersObj = await this.getUsersObj();
+        const id = String(userId);
+        
+        if (usersObj[id]) return usersObj[id];
+        
+        // If local, use the localDb helper which handles initialization
+        if (this.storageType === 'local') {
+            return localDb.getUser(userId);
+        }
+        
+        // For Google Drive, we might need to initialize if it doesn't exist
+        // But for now, let's just return null or the object if it exists
+        return usersObj[id] || null;
+    }
+
+    /**
+     * Save user
+     */
+    async saveUser(userId, userData) {
+        await this.ready;
+        const id = String(userId);
+        if (this.storageType === 'google_drive') {
+            const users = await this.getUsersObj();
+            users[id] = userData;
+            await googleDriveStorage.saveData('users.json', users);
+        } else {
+            localDb.data.users[id] = userData;
+            localDb.save();
+        }
+    }
+
+    /**
+     * Update user (compatibility with local db)
+     */
+    async updateUser(user) {
+        if (!user || !user.id) return;
+        return this.saveUser(user.id, user);
+    }
+
+    /**
+     * Get services
+     */
+    async getServices() {
+        await this.ready;
+        if (this.storageType === 'google_drive') {
+            const data = await googleDriveStorage.loadData('services.json');
+            return data || {};
+        } else {
+            return localDb.getEmailServices();
+        }
+    }
+
+    /**
+     * Save service
+     */
+    async saveService(serviceId, serviceData) {
+        if (this.storageType === 'google_drive') {
+            const services = await this.getServices();
+            services[serviceId] = serviceData;
+            await googleDriveStorage.saveData('services.json', services);
+        } else {
+            localDb.getEmailServices()[serviceId] = serviceData;
+            localDb.save();
+        }
+    }
+
+    /**
+     * Get gmails
+     */
+    async getGmails() {
+        if (this.storageType === 'google_drive') {
+            const data = await googleDriveStorage.loadData('gmails.json');
+            return data || [];
+        } else {
+            return localDb.getGmails();
+        }
+    }
+
+    /**
+     * Add gmail
+     */
+    async addGmail(gmailData) {
+        if (this.storageType === 'google_drive') {
+            const gmails = await this.getGmails();
+            gmails.push(gmailData);
+            await googleDriveStorage.saveData('gmails.json', gmails);
+        } else {
+            localDb.getGmails().push(gmailData);
+            localDb.save();
+        }
+    }
+
+    /**
+     * Get settings
+     */
+    async getSettings() {
+        await this.ready;
+        if (this.storageType === 'google_drive') {
+            const data = await googleDriveStorage.loadData('settings.json');
+            return data || {};
+        } else {
+            return localDb.getSettings();
+        }
+    }
+
+    /**
+     * Update settings
+     */
+    async updateSettings(updates) {
+        if (this.storageType === 'google_drive') {
+            const settings = await this.getSettings();
+            Object.assign(settings, updates);
+            await googleDriveStorage.saveData('settings.json', settings);
+        } else {
+            Object.assign(localDb.getSettings(), updates);
+            localDb.save();
+        }
+    }
+
+    /**
+     * Create promo code
+     */
+    async createCode(code, amount, maxUses) {
+        if (this.storageType === 'google_drive') {
+            const settings = await this.getSettings();
+            if (!settings.codes) settings.codes = {};
+            settings.codes[code] = {
+                amount: amount,
+                maxUses: maxUses,
+                used: 0,
+                createdAt: Date.now()
+            };
+            await googleDriveStorage.saveData('settings.json', settings);
+        } else {
+            localDb.createCode(code, amount, maxUses);
+        }
+    }
+
+    /**
+     * Delete promo code
+     */
+    async deleteCode(code) {
+        if (this.storageType === 'google_drive') {
+            const settings = await this.getSettings();
+            if (settings.codes && settings.codes[code]) {
+                delete settings.codes[code];
+                await googleDriveStorage.saveData('settings.json', settings);
+                return true;
+            }
+            return false;
+        } else {
+            return localDb.deleteCode(code);
+        }
+    }
+
+    /**
+     * Get storage status
+     */
+    async getStorageStatus() {
+        if (this.storageType === 'google_drive') {
+            const info = await googleDriveStorage.getStorageInfo();
+            return {
+                type: 'Google Drive',
+                connected: true,
+                total: this._formatBytes(info.total),
+                used: this._formatBytes(info.used),
+                free: this._formatBytes(info.free),
+                user: info.user
+            };
+        } else {
+            const fs = require('fs');
+            const dbPath = require('path').join(__dirname, '..', 'database.json');
+            let size = 0;
+            if (fs.existsSync(dbPath)) {
+                size = fs.statSync(dbPath).size;
+            }
+
+            return {
+                type: 'Local Storage',
+                connected: false,
+                size: this._formatBytes(size),
+                path: dbPath
+            };
+        }
+    }
+
+    /**
+     * Format bytes to human readable
+     */
+    _formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    /**
+     * Is using Google Drive?
+     */
+    isUsingGoogleDrive() {
+        return this.storageType === 'google_drive';
+    }
+
+    /**
+     * Get current storage type
+     */
+    getStorageType() {
+        return this.storageType;
+    }
+
+    /**
+     * Get token balance from user object
+     */
+    getTokenBalance(user) {
+        if (!user) return 0;
+        if (user.tokens !== undefined) return user.tokens;
+        if (user.balance_tokens !== undefined) return user.balance_tokens;
+        return user.balance || 0;
+    }
+
+    /**
+     * Set token balance (keeps all fields in sync)
+     */
+    setTokenBalance(user, amount) {
+        if (!user) return;
+        const val = Math.max(0, Math.round(amount));
+        user.tokens = val;
+        user.balance_tokens = val;
+        user.balance = val;
+    }
+}
+
+module.exports = new UnifiedDatabase();
