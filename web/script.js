@@ -599,9 +599,12 @@ function applyFeatureFlagsToHome() {
         { key: 'home_mail', selector: '[onclick="nav(\'emailMenu\')"]' },
         { key: 'home_number', selector: '[onclick="nav(\'numberService\')"]' },
         { key: 'home_accountsShop', selector: '[onclick="nav(\'services\')"]' },
+        { key: 'home_accounts', selector: '[onclick="nav(\'services\')"]' },
         { key: 'home_videoDownload', selector: '[onclick="nav(\'videoDownload\')"]' },
         { key: 'home_aiPhoto', selector: '[onclick="nav(\'smmInstagram\')"]' },
+        { key: 'home_smmInstagram', selector: '[onclick="nav(\'smmInstagram\')"]' },
         { key: 'home_aiVideo', selector: '[onclick="nav(\'websiteTraffic\')"]' },
+        { key: 'home_websiteTraffic', selector: '[onclick="nav(\'websiteTraffic\')"]' },
         { key: 'home_bgRemover', selector: '[onclick="nav(\'bgRemover\')"]' },
         { key: 'dailyCheckin', selector: '[onclick="nav(\'daily\')"]' },
         { key: 'tasksSystem', selector: '[onclick="nav(\'tasks\')"]' },
@@ -609,7 +612,7 @@ function applyFeatureFlagsToHome() {
         { key: 'exchange', selector: '[onclick="nav(\'earnMenuPage\')"]' },
         { key: 'home_vpn', selector: '[onclick="nav(\'vpnServices\')"]' },
         { key: 'home_vcc', selector: '[onclick="nav(\'vccCards\')"]' },
-        { key: 'home_accounts', selector: '[onclick="nav(\'services\')"]' },
+        { key: 'home_vccShop', selector: '[onclick="nav(\'vccCards\')"]' },
         { key: 'home_gemini', selector: '[onclick="nav(\'geminiVerification\')"]' }
     ];
     mappings.forEach(item => {
@@ -5722,10 +5725,22 @@ function syncAdminData() {
                 // ── Update all invite/referral UI elements ────────────────
                 if (typeof updateInviteUI === 'function') updateInviteUI();
                 const inviteRewardEl = document.getElementById('inviteRewardAmount');
-                if (inviteRewardEl) inviteRewardEl.textContent = appConfig.inviteBonus;
+                if (inviteRewardEl) {
+                    const currency = c.inviteCurrency || 'token';
+                    let label = 'Tokens';
+                    if (currency === 'Gems') label = 'Gems';
+                    else if (currency === 'usd') label = 'USD';
+                    else if (currency === 'both') label = `Tokens + ${c.inviteBonusGems || 0} Gems`;
+                    inviteRewardEl.textContent = `${appConfig.inviteBonus} ${label}`;
+                }
                 // Update any data-invite-bonus attributes
                 document.querySelectorAll('[data-invite-bonus]').forEach(el => {
-                    el.textContent = appConfig.inviteBonus;
+                    const currency = c.inviteCurrency || 'token';
+                    let label = 'TC';
+                    if (currency === 'Gems') label = 'Gems';
+                    else if (currency === 'usd') label = '$';
+                    else if (currency === 'both') label = `TC + ${c.inviteBonusGems || 0} Gems`;
+                    el.textContent = `${appConfig.inviteBonus} ${label}`;
                 });
 
                 const getCurrencyLabel = (val) => {
@@ -8795,6 +8810,10 @@ function refreshInbox(type) {
         .then(r => r.json())
         .then(data => {
             if (refreshIcon) refreshIcon.classList.remove("fa-spin");
+            if (data.code === 'BLOCKED_PROVIDER') {
+                handleBlockedProviderInbox(type, data.message);
+                return;
+            }
             if (refreshCost > 0 && data && typeof data.newBalance === 'number') {
                 userData.tokens = data.newBalance;
                 renderBalances();
@@ -8811,6 +8830,75 @@ function refreshInbox(type) {
             renderInbox([], type, "Connection error: " + (err.message || "Unknown"));
         });
 }
+
+function handleBlockedProviderInbox(type, message) {
+    const listEl = document.getElementById(type + "InboxList");
+    if (!listEl) return;
+    
+    listEl.innerHTML = `
+        <div style="text-align:center; padding:30px 15px; background:rgba(239, 68, 68, 0.05); border:1px solid rgba(239, 68, 68, 0.2); border-radius:12px; margin:10px;">
+            <i class="fas fa-exclamation-triangle" style="font-size:36px; color:#ef4444; margin-bottom:12px;"></i>
+            <div style="font-size:13px; font-weight:700; color:var(--text-main); margin-bottom:8px;">Outdated Mail Provider</div>
+            <p style="font-size:12px; color:var(--text-sub); line-height:1.5; margin-bottom:16px;">
+                Your current temporary email is on a provider that is currently experiencing connection blocks. 
+                We will upgrade your mailbox to a 100% working provider for FREE.
+            </p>
+            <button onclick="upgradeBlockedProvider('${type}')" 
+                style="background: #10b981; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size:13px; font-weight:700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow:0 4px 10px rgba(16,185,129,0.3); outline: none;">
+                <i class="fas fa-rocket"></i> UPGRADE FOR FREE
+            </button>
+        </div>
+    `;
+    
+    const otpListEl = document.getElementById(type + "OtpList");
+    if (otpListEl) {
+        otpListEl.innerHTML = `<div style="font-size:11px; color:#ef4444; padding:10px; font-weight:700;">Provider Outdated</div>`;
+    }
+}
+
+function upgradeBlockedProvider(type) {
+    if (!type) type = 'temp';
+    const addrEl = document.getElementById(type + "MailAddr");
+    if (addrEl) {
+        addrEl.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="margin-right:8px;"></i>upgrading...';
+        addrEl.style.fontStyle = 'italic';
+        addrEl.style.opacity = '0.7';
+    }
+    
+    fetch("/api/mail/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: userData.id, cost: 0, type, isUpgrade: true })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success && data.email) {
+            mailSessions[type] = { ...data, createdAt: Date.now() };
+            if (addrEl) {
+                addrEl.textContent = data.email;
+                addrEl.style.fontStyle = "normal";
+                addrEl.style.opacity = "1";
+            }
+            updateMailBalance(type);
+            refreshInbox(type);
+            window.showToast("✅ Mailbox upgraded successfully to a fast, working provider!", "success");
+            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        } else {
+            window.showToast("❌ Upgrade failed: " + (data.message || "Try again"), "error");
+            if (addrEl) {
+                addrEl.innerHTML = '<span style="color:#f87171;">Failed. Tap UPGRADE FOR FREE.</span>';
+            }
+        }
+    })
+    .catch(err => {
+        window.showToast("❌ Connection error. Please try again.");
+        if (addrEl) {
+            addrEl.innerHTML = '<span style="color:#f87171;">Network error.</span>';
+        }
+    });
+}
+
+window.upgradeBlockedProvider = upgradeBlockedProvider;
 
 function getTimeAgo(isoString) {
     if (!isoString) return '';

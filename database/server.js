@@ -2078,27 +2078,82 @@ app.post('/api/generate/live-check', async (req, res) => {
             usernameOnly = usernameOnly.split('@')[0].trim();
         }
 
-        let checkUrl = '';
-        let isOembed = false;
+        // ── Heuristics validation ──────────────────────────────────────────
+        const u = usernameOnly.toLowerCase().trim();
+        let isHeuristicsValid = true;
+        let heuristicsReason = '';
 
-        if (platform === 'instagram') {
-            checkUrl = `https://api.instagram.com/oembed/?url=https://www.instagram.com/${usernameOnly}`;
-            isOembed = true;
-        } else if (platform === 'tiktok') {
-            checkUrl = `https://www.tiktok.com/oembed?url=https://www.tiktok.com/@${usernameOnly}`;
-            isOembed = true;
-        } else if (platform === 'twitter') {
-            checkUrl = `https://publish.twitter.com/oembed?url=https://twitter.com/${usernameOnly}`;
-            isOembed = true;
-        } else if (platform === 'facebook') {
-            checkUrl = `https://www.facebook.com/${usernameOnly}`;
-            isOembed = false;
-        } else if (platform === 'threads') {
-            checkUrl = `https://www.threads.net/@${usernameOnly}`;
-            isOembed = false;
+        if (u.length < 3 || u.length > 35) {
+            isHeuristicsValid = false;
+            heuristicsReason = 'Username length must be between 3 and 35 characters';
+        } else {
+            let allowedRegex = /^[a-z0-9._]+$/;
+            if (platform === 'twitter' || platform === 'threads') {
+                allowedRegex = /^[a-z0-9_]+$/;
+            }
+            if (!allowedRegex.test(u)) {
+                isHeuristicsValid = false;
+                heuristicsReason = 'Username contains invalid characters';
+            } else if (u.includes('..') || u.includes('__') || u.includes('._') || u.includes('_.')) {
+                isHeuristicsValid = false;
+                heuristicsReason = 'Consecutive symbols are not allowed';
+            } else if (u.startsWith('.') || u.endsWith('.') || u.startsWith('_') || u.endsWith('_')) {
+                isHeuristicsValid = false;
+                heuristicsReason = 'Cannot start or end with a symbol';
+            } else {
+                const garbagePatterns = [
+                    /abcde/, /qwert/, /asdfg/, /zxcvb/,
+                    /12345/, /23456/, /34567/, /45678/, /56789/,
+                    /(.)\1{3,}/, // same character repeated 4+ times (e.g., aaaa, 1111)
+                    /(..)\1{2,}/, // same 2 characters repeated (e.g. ababab, 121212)
+                ];
+                for (const pattern of garbagePatterns) {
+                    if (pattern.test(u)) {
+                        isHeuristicsValid = false;
+                        heuristicsReason = 'Username contains suspicious repeating pattern';
+                        break;
+                    }
+                }
+                if (isHeuristicsValid) {
+                    const vowels = (u.match(/[aeiou]/g) || []).length;
+                    const digits = (u.match(/[0-9]/g) || []).length;
+                    const letters = (u.match(/[a-z]/g) || []).length;
+                    if (letters >= 8 && vowels === 0) {
+                        isHeuristicsValid = false;
+                        heuristicsReason = 'Username contains too many consecutive consonants';
+                    } else if (digits > u.length * 0.75) {
+                        isHeuristicsValid = false;
+                        heuristicsReason = 'Username is mostly numbers';
+                    }
+                }
+            }
         }
 
-        if (checkUrl) {
+        if (!isHeuristicsValid) {
+            isValid = false;
+            statusNote = `Heuristics - ${heuristicsReason}`;
+        } else {
+            let checkUrl = '';
+            let isOembed = false;
+
+            if (platform === 'instagram') {
+                checkUrl = `https://api.instagram.com/oembed/?url=https://www.instagram.com/${usernameOnly}`;
+                isOembed = true;
+            } else if (platform === 'tiktok') {
+                checkUrl = `https://www.tiktok.com/oembed?url=https://www.tiktok.com/@${usernameOnly}`;
+                isOembed = true;
+            } else if (platform === 'twitter') {
+                checkUrl = `https://publish.twitter.com/oembed?url=https://twitter.com/${usernameOnly}`;
+                isOembed = true;
+            } else if (platform === 'facebook') {
+                checkUrl = `https://www.facebook.com/${usernameOnly}`;
+                isOembed = false;
+            } else if (platform === 'threads') {
+                checkUrl = `https://www.threads.net/@${usernameOnly}`;
+                isOembed = false;
+            }
+
+            if (checkUrl) {
             let response;
             try {
                 response = await axios.get(checkUrl, {
@@ -2194,16 +2249,24 @@ app.post('/api/generate/live-check', async (req, res) => {
                     statusNote = `HTML ${s} - Not Found`;
                 } else if (s === 200 || s === 301 || s === 302 || s === 303 || s === 429) {
                     const bodyLower = (response.data || '').toString().toLowerCase().slice(0, 3000);
-                    const notFoundPhrases = ['page not found', 'user not found', "isn't available", 'no longer available', 'account suspended', 'this account doesn', 'profile_unavailable'];
-                    const bodyIndicatesDead = notFoundPhrases.some(p => bodyLower.includes(p));
-                    isValid = !bodyIndicatesDead;
-                    statusNote = `HTML ${s}${bodyIndicatesDead ? ' (body says dead)' : ' (active)'}`;
+                    const isBlocked = bodyLower.includes('something went wrong') || bodyLower.includes('<title>error</title>') || bodyLower.includes('login_form') || bodyLower.includes('log in to facebook');
+                    
+                    if (isBlocked && (platform === 'facebook' || platform === 'threads' || platform === 'instagram')) {
+                        isValid = true;
+                        statusNote = `Format Verified - Active (Platform crawler restricted)`;
+                    } else {
+                        const notFoundPhrases = ['page not found', 'user not found', "isn't available", 'no longer available', 'account suspended', 'this account doesn', 'profile_unavailable'];
+                        const bodyIndicatesDead = notFoundPhrases.some(p => bodyLower.includes(p));
+                        isValid = !bodyIndicatesDead;
+                        statusNote = `HTML ${s}${bodyIndicatesDead ? ' (body says dead)' : ' (active)'}`;
+                    }
                 } else {
                     isValid = true;
                     statusNote = `HTML ${s} - Unknown`;
                 }
             }
         }
+    }
     } catch (checkErr) {
         // Network timeout, connection refused etc — treat as valid (benefit of doubt)
         isValid = true;
@@ -3379,8 +3442,33 @@ app.get('/api/number/otp', async (req, res) => {
         if (manualNum && manualNum.otpApi) {
             try {
                 const apiURL = manualNum.otpApi.replace('{number}', manualNum.number);
-                const response = await axios.get(apiURL, { timeout: 5000 });
-                const data = response.data;
+                let response = await axios.get(apiURL, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    },
+                    timeout: 8000
+                });
+                let data = response.data;
+
+                if (apiURL.includes('sms-receive.net')) {
+                    const html = (data || '').toString();
+                    const nnMatch = html.match(/let\s+nn\s*=\s*'([^']+)'/);
+                    const phoneMatch = html.match(/phone=([0-9]+)/) || apiURL.match(/([0-9]{8,15})/);
+                    if (nnMatch && phoneMatch) {
+                        const nn = nnMatch[1];
+                        const phone = phoneMatch[1];
+                        const ajaxUrl = `https://sms-receive.net/script_register.php?key=${encodeURIComponent(nn)}&phone=${phone}&alt_x=${Math.round(Date.now() / 1000)}`;
+                        const ajaxResponse = await axios.get(ajaxUrl, {
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Referer': apiURL
+                            },
+                            timeout: 8000
+                        });
+                        data = ajaxResponse.data;
+                    }
+                }
+
                 let otp = null;
 
                 if (typeof data === 'object' && data !== null) {
@@ -3950,7 +4038,7 @@ app.get('/api/premium-emails/inbox', async (req, res) => {
 
 // API: Generate Temp/Hot/Gmail Email
 app.post('/api/mail/generate', async (req, res) => {
-    const { userId, cost, type, service } = req.body;
+    const { userId, cost, type, service, isUpgrade } = req.body;
     const users = getUsersObj();
     const user = users[userId];
     if (!user) return res.json({ success: false, message: 'User not found' });
@@ -3958,10 +4046,12 @@ app.post('/api/mail/generate', async (req, res) => {
     const costs = settings.costs || {};
     const requestedService = (type || service || 'temp').toString().toLowerCase();
 
-    let tokenCost = costs.tempmail || 10;
-    if (requestedService === 'gmail' || requestedService === 'premium') tokenCost = costs.gmail || 20;
-    else if (requestedService === 'hotmail' || requestedService === 'hot') tokenCost = costs.hotmail || 25;
-    else if (requestedService === 'student') tokenCost = costs.student || 50;
+    let tokenCost = isUpgrade ? 0 : (costs.tempmail || 10);
+    if (!isUpgrade) {
+        if (requestedService === 'gmail' || requestedService === 'premium') tokenCost = costs.gmail || 20;
+        else if (requestedService === 'hotmail' || requestedService === 'hot') tokenCost = costs.hotmail || 25;
+        else if (requestedService === 'student') tokenCost = costs.student || 50;
+    }
 
     let currency = 'token';
     if (requestedService === 'gmail' || requestedService === 'premium') currency = costs.gmailCurrency || 'token';
@@ -3970,19 +4060,21 @@ app.post('/api/mail/generate', async (req, res) => {
     else currency = costs.tempmailCurrency || 'token';
 
     // Balance check based on currency
-    if (currency === 'Gems' || currency === 'gem') {
-        const userGems = user.Gems || 0;
-        if (userGems < tokenCost) {
-            return res.json({ success: false, message: `Insufficient Gems. Need ${tokenCost} Gems for ${requestedService}.` });
+    if (tokenCost > 0) {
+        if (currency === 'Gems' || currency === 'gem') {
+            const userGems = user.Gems || 0;
+            if (userGems < tokenCost) {
+                return res.json({ success: false, message: `Insufficient Gems. Need ${tokenCost} Gems for ${requestedService}.` });
+            }
+        } else if (currency === 'usd' || currency === 'USD') {
+            const userUsd = user.usd || 0;
+            if (userUsd < tokenCost) {
+                return res.json({ success: false, message: `Insufficient USD. Need $${tokenCost} for ${requestedService}.` });
+            }
+        } else {
+            const mailTokens = db.getTokenBalance(user);
+            if (mailTokens < tokenCost) return res.json({ success: false, message: `Insufficient tokens. Need ${tokenCost} TC for ${requestedService}.` });
         }
-    } else if (currency === 'usd' || currency === 'USD') {
-        const userUsd = user.usd || 0;
-        if (userUsd < tokenCost) {
-            return res.json({ success: false, message: `Insufficient USD. Need $${tokenCost} for ${requestedService}.` });
-        }
-    } else {
-        const mailTokens = db.getTokenBalance(user);
-        if (mailTokens < tokenCost) return res.json({ success: false, message: `Insufficient tokens. Need ${tokenCost} TC for ${requestedService}.` });
     }
 
     let emailData = null;
@@ -4083,33 +4175,35 @@ app.post('/api/mail/generate', async (req, res) => {
         return res.json({ success: false, message: 'Email not available. Please try again later or contact admin.' });
     }
 
-    if (currency === 'Gems' || currency === 'gem') {
-        const currentGemsForMail = parseFloat(user.balance_Gems !== undefined ? user.balance_Gems : (user.Gems || 0));
-        user.Gems = parseFloat((currentGemsForMail - tokenCost).toFixed(4));
-        user.balance_Gems = user.Gems;
-    } else if (currency === 'usd' || currency === 'USD') {
-        user.usd = (user.usd || 0) - tokenCost;
-    } else {
-        db.setTokenBalance(user, db.getTokenBalance(user) - tokenCost);
+    if (tokenCost > 0) {
+        if (currency === 'Gems' || currency === 'gem') {
+            const currentGemsForMail = parseFloat(user.balance_Gems !== undefined ? user.balance_Gems : (user.Gems || 0));
+            user.Gems = parseFloat((currentGemsForMail - tokenCost).toFixed(4));
+            user.balance_Gems = user.Gems;
+        } else if (currency === 'usd' || currency === 'USD') {
+            user.usd = (user.usd || 0) - tokenCost;
+        } else {
+            db.setTokenBalance(user, db.getTokenBalance(user) - tokenCost);
+        }
+
+        if (!user.history) user.history = [];
+
+        let historyType = 'temp_mail';
+        if (requestedService === 'hotmail' || requestedService === 'hot') historyType = 'hotmail_email';
+        else if (requestedService === 'gmail' || requestedService === 'premium') historyType = 'gmail_email';
+        else if (requestedService === 'student') historyType = 'student_email';
+
+        const curLabel = (currency === 'Gems' || currency === 'gem') ? 'Gems' : ((currency === 'usd' || currency === 'USD') ? 'USD' : 'Tokens');
+
+        user.history.unshift({
+            type: historyType,
+            amount: -tokenCost,
+            date: new Date().toISOString(),
+            reward: `-${tokenCost} ${curLabel}`,
+            detail: emailData.email
+        });
+        saveUsersObj(users);
     }
-
-    if (!user.history) user.history = [];
-
-    let historyType = 'temp_mail';
-    if (requestedService === 'hotmail' || requestedService === 'hot') historyType = 'hotmail_email';
-    else if (requestedService === 'gmail' || requestedService === 'premium') historyType = 'gmail_email';
-    else if (requestedService === 'student') historyType = 'student_email';
-
-    const curLabel = (currency === 'Gems' || currency === 'gem') ? 'Gems' : ((currency === 'usd' || currency === 'USD') ? 'USD' : 'Tokens');
-
-    user.history.unshift({
-        type: historyType,
-        amount: -tokenCost,
-        date: new Date().toISOString(),
-        reward: `-${tokenCost} ${curLabel}`,
-        detail: emailData.email
-    });
-    saveUsersObj(users);
 
     // Store session
     if (!db.data.mailSessions) db.data.mailSessions = {};
@@ -4248,6 +4342,21 @@ app.get('/api/mail/inbox', async (req, res) => {
     const session = sessions[sessionId];
     if (!session) return res.json({ success: false, messages: [] });
 
+    // ✅ FIX: Detect and flag blocked/outdated providers (1secmail, dropmail, mail.gw)
+    const isBlockedProvider = ['1secmail', 'dropmail', 'mail.gw'].includes(session.provider) ||
+                              (session.email && (
+                                  session.email.includes('1secmail') ||
+                                  session.email.includes('dropmail') ||
+                                  session.email.includes('mail.gw')
+                              ));
+    if (isBlockedProvider) {
+        return res.json({
+            success: false,
+            code: 'BLOCKED_PROVIDER',
+            message: '⚠️ Outdated email provider detected. Click UPGRADE to get a fresh working inbox for FREE!'
+        });
+    }
+
     // Optional billing per refresh
     if (cost > 0 && userId) {
         try {
@@ -4275,7 +4384,7 @@ app.get('/api/mail/inbox', async (req, res) => {
                 messages = await imapService.fetchMessagesForEmail(targetType, session.email, 120);
             } else if (session.email) {
                 // Try reconnect
-                const saved = db.data.settings?.motherEmails?.[targetType];
+                const saved = db.data.adminSettings?.motherEmailConfigs?.[targetType];
                 if (saved) {
                     const ok = await imapService.connect(targetType, saved);
                     if (ok) messages = await imapService.fetchMessagesForEmail(targetType, session.email, 120);
@@ -6455,7 +6564,11 @@ app.get('/api/admin/costs', (req, res) => {
             watermarkRemoveCost: adminSettings.watermarkRemoveCost !== undefined ? adminSettings.watermarkRemoveCost : 10,
 
             // BDT Rate
-            usdToBdt: adminSettings.usdToBdt || 120
+            usdToBdt: adminSettings.usdToBdt || 120,
+
+            // Leaderboard Rewards
+            leaderboardWeeklyRewards: settings.leaderboardWeeklyRewards || '100,70,50,20,20,20,20,20,20,20',
+            leaderboardMonthlyRewards: settings.leaderboardMonthlyRewards || '500,350,250,100,100,100,100,100,100,100'
         },
         sellingRewards: db.data.sellingRewards || {},
         dbSize: (fs.existsSync(db.DB_FILE) ? (fs.statSync(db.DB_FILE).size / 1024).toFixed(2) : 0) + ' KB'
@@ -6562,6 +6675,8 @@ app.post('/api/admin/costs', (req, res) => {
     if (payload.takaToGem !== undefined) db.data.settings.takaToGem = parseInt(payload.takaToGem) || 100;
     if (payload.platformFee !== undefined) db.data.settings.platformFee = parseInt(payload.platformFee) || 20;
     if (payload.usdToBdt !== undefined) db.data.settings.usdToBdt = parseFloat(payload.usdToBdt) || 120;
+    if (payload.leaderboardWeeklyRewards !== undefined) db.data.settings.leaderboardWeeklyRewards = String(payload.leaderboardWeeklyRewards);
+    if (payload.leaderboardMonthlyRewards !== undefined) db.data.settings.leaderboardMonthlyRewards = String(payload.leaderboardMonthlyRewards);
 
     // Service Costs (Nested in costs)
     if (!db.data.settings.costs) db.data.settings.costs = {};
@@ -7291,6 +7406,110 @@ app.post('/api/admin/manual-numbers/bulk', (req, res) => {
 
     db.save();
     res.json({ success: true, added });
+});
+
+app.post('/api/admin/scrape-free-numbers', async (req, res) => {
+    const { urls, platform, countryCode } = req.body;
+    if (!urls || !Array.isArray(urls)) {
+        return res.status(400).json({ success: false, error: 'Invalid or missing URLs array' });
+    }
+    if (!platform) {
+        return res.status(400).json({ success: false, error: 'Platform is required' });
+    }
+
+    if (!db.data.manualNumbers) db.data.manualNumbers = [];
+
+    let count = 0;
+    const cleanCountry = (countryCode || '').trim().replace('+', '');
+
+    for (const rawUrl of urls) {
+        const url = rawUrl.trim();
+        if (!url) continue;
+
+        try {
+            const urlObj = new URL(url);
+            const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+
+            const response = await axios.get(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
+                timeout: 10000
+            });
+
+            const html = response.data || '';
+            const linkRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]+)"/gi;
+            let match;
+            const extracted = [];
+
+            while ((match = linkRegex.exec(html)) !== null) {
+                const href = match[1];
+                // Match contiguous sequences of 8 to 15 digits
+                const numMatch = href.match(/\b([0-9]{8,15})\b/);
+                if (numMatch) {
+                    const num = numMatch[1];
+                    let fullDetailUrl = href;
+                    if (href.startsWith('/')) {
+                        fullDetailUrl = baseUrl + href;
+                    } else if (!href.startsWith('http')) {
+                        fullDetailUrl = baseUrl + '/' + href;
+                    }
+                    extracted.push({ number: num, detailUrl: fullDetailUrl });
+                }
+            }
+
+            // Standalone digits backup
+            if (extracted.length === 0) {
+                const regexDigits = /\b([0-9]{8,15})\b/g;
+                let digitMatch;
+                while ((digitMatch = regexDigits.exec(html)) !== null) {
+                    const num = digitMatch[1];
+                    extracted.push({ number: num, detailUrl: url });
+                }
+            }
+
+            // Deduplicate and process
+            const seen = new Set();
+            for (const item of extracted) {
+                if (seen.has(item.number)) continue;
+                seen.add(item.number);
+
+                const num = item.number;
+                // Filter by country code if specified
+                if (cleanCountry) {
+                    if (!num.startsWith(cleanCountry)) {
+                        continue;
+                    }
+                }
+
+                // Check duplicate in platform
+                const exists = db.data.manualNumbers.find(n => n.number === num && n.platform === platform.toLowerCase());
+                if (!exists) {
+                    db.data.manualNumbers.push({
+                        id: Date.now() + Math.random().toString(36).substr(2, 9),
+                        number: num,
+                        platform: platform.toLowerCase(),
+                        countryCode: cleanCountry || '1',
+                        otpApi: item.detailUrl,
+                        status: 'available',
+                        otp: null,
+                        createdAt: Date.now(),
+                        updatedAt: Date.now()
+                    });
+                    count++;
+                }
+            }
+
+        } catch (err) {
+            console.error(`[SCRAPER] Error scraping ${url}:`, err.message);
+        }
+    }
+
+    if (count > 0) {
+        db.save();
+    }
+
+    res.json({ success: true, count });
 });
 
 app.delete('/api/admin/manual-numbers/group/:platform', (req, res) => {
@@ -10489,9 +10708,22 @@ async function _distributeLeaderboardRewards(period) {
             .sort((a, b) => b.count - a.count)
             .slice(0, 10);
 
-        const referralRewards = period === 'month'
-            ? [500, 350, 250, 100, 100, 100, 100, 100, 100, 100]
-            : [100, 70, 50, 20, 20, 20, 20, 20, 20, 20];
+        // Dynamic Referral Rewards from admin settings
+        const settings = db.getSettings();
+        let referralRewards = [];
+        if (period === 'month') {
+            if (settings.leaderboardMonthlyRewards) {
+                referralRewards = settings.leaderboardMonthlyRewards.split(',').map(x => parseFloat(x.trim()) || 0);
+            } else {
+                referralRewards = [500, 350, 250, 100, 100, 100, 100, 100, 100, 100];
+            }
+        } else {
+            if (settings.leaderboardWeeklyRewards) {
+                referralRewards = settings.leaderboardWeeklyRewards.split(',').map(x => parseFloat(x.trim()) || 0);
+            } else {
+                referralRewards = [100, 70, 50, 20, 20, 20, 20, 20, 20, 20];
+            }
+        }
 
         for (let i = 0; i < sortedReferrers.length; i++) {
             const { user } = sortedReferrers[i];

@@ -309,21 +309,44 @@ async function fetchMessagesForEmail(type, targetEmail, sinceMinutes = 120) {
         const since = new Date();
         since.setMinutes(since.getMinutes() - sinceMinutes);
 
-        // Optimize: Search by TO and SINCE directly in IMAP
-        const searchCriteria = [
-            ['SINCE', since],
-            ['TO', targetEmail]
-        ];
         const fetchOptions = {
             bodies: ['HEADER', 'TEXT', ''],
             markSeen: false,
             struct: true
         };
 
-        const messages = await imapConnection.search(searchCriteria, fetchOptions);
-        const parsed = [];
+        let messages = [];
+        try {
+            // Optimize: Search by TO and SINCE directly in IMAP first
+            const searchCriteria = [
+                ['SINCE', since],
+                ['TO', targetEmail]
+            ];
+            messages = await imapConnection.search(searchCriteria, fetchOptions);
+        } catch (searchErr) {
+            console.warn(`[IMAP] Direct TO search failed for ${targetEmail}:`, searchErr.message);
+        }
 
-        for (const msg of messages.slice(-50)) { // limit to 50
+        // Fallback: If direct search found nothing or failed, get all recent inbox emails and filter in-memory
+        if (!messages || messages.length === 0) {
+            console.log(`[IMAP] Direct search yielded 0 results for ${targetEmail}. Fetching last 50 emails as fallback...`);
+            try {
+                const fallbackCriteria = [['SINCE', since]];
+                messages = await imapConnection.search(fallbackCriteria, fetchOptions);
+            } catch (fallbackErr) {
+                try {
+                    messages = await imapConnection.search(['ALL'], fetchOptions);
+                } catch (allErr) {
+                    console.error('[IMAP] Failed all search methods:', allErr.message);
+                    messages = [];
+                }
+            }
+        }
+
+        const parsed = [];
+        const targetLower = targetEmail.toLowerCase();
+
+        for (const msg of messages.slice(-100)) { // look up to last 100 messages to be thorough
             try {
                 const bodyPart = msg.parts.find(p => p.which === '');
                 const raw = bodyPart ? bodyPart.body : '';
@@ -335,6 +358,19 @@ async function fetchMessagesForEmail(type, targetEmail, sinceMinutes = 120) {
                 const from = parsed_mail.from?.text || 'Unknown';
                 const to = parsed_mail.to?.text || '';
                 const date = parsed_mail.date || new Date();
+
+                // Check for match
+                const toText = (to || '').toLowerCase();
+                const headersText = JSON.stringify(parsed_mail.headers || {}).toLowerCase();
+
+                const isTargetMatch = toText.includes(targetLower) || 
+                                      headersText.includes(targetLower) ||
+                                      (parsed_mail.html && parsed_mail.html.toLowerCase().includes(targetLower)) ||
+                                      (parsed_mail.text && parsed_mail.text.toLowerCase().includes(targetLower));
+
+                if (!isTargetMatch) {
+                    continue; // Skip message if it doesn't match our targetEmail
+                }
 
                 // Extract OTP using robust extractor
                 const extracted = robustExtractOTP(body, subject);

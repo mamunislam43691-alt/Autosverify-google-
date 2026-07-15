@@ -2880,6 +2880,48 @@
                                 MANAGE API PROVIDERS
                             </button>
                         </div>
+
+                        <!-- FREE VIRTUAL NUMBERS AUTO-IMPORT & SCRAPER -->
+                        <div class="glass-card rounded-2xl p-6 border border-orange-500/20">
+                            <h3 class="font-bold mb-2 flex items-center gap-2 text-orange-400">
+                                <i class="fas fa-spider"></i> FREE SITES AUTO-IMPORT
+                            </h3>
+                            <p class="text-xs text-gray-400 mb-4">Provide URLs of free public temporary SMS sites. The system will auto-scrape available active numbers from them.</p>
+                            
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="text-[10px] text-gray-400 uppercase font-bold block mb-1">FREE SMS SITE URLS (One per line)</label>
+                                    <textarea id="free-sms-urls" placeholder="https://sms-receive.net/&#10;https://receive-sms-free.cc/"
+                                        class="w-full h-24 bg-black/30 border border-white/10 p-3 rounded-xl text-white outline-none focus:border-orange-500 font-mono text-xs"
+                                        style="resize:none;">https://sms-receive.net/&#10;https://receive-sms-free.cc/</textarea>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 uppercase font-bold block mb-1">PLATFORM</label>
+                                        <select id="free-sms-platform"
+                                            class="w-full bg-black/30 border border-white/10 p-2.5 rounded-xl text-white text-xs outline-none focus:border-orange-500">
+                                            <option value="telegram">Telegram</option>
+                                            <option value="whatsapp">WhatsApp</option>
+                                            <option value="tiktok">TikTok</option>
+                                            <option value="twitter">X (Twitter)</option>
+                                            <option value="facebook">Facebook</option>
+                                            <option value="google">Google/Gmail</option>
+                                            <option value="microsoft">Microsoft</option>
+                                            <option value="imo">IMO</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 uppercase font-bold block mb-1">COUNTRY PREFIX</label>
+                                        <input id="free-sms-country" type="text" placeholder="e.g. 1, 44" value="1"
+                                            class="w-full bg-black/30 border border-white/10 p-2.5 rounded-xl text-white text-xs outline-none focus:border-orange-500 font-mono">
+                                    </div>
+                                </div>
+                                <button onclick="scrapeFreeNumbers()" id="btn-scrape-free"
+                                    class="w-full mt-2 bg-gradient-to-r from-orange-500 to-amber-600 text-black py-3 rounded-xl text-xs font-bold hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20">
+                                    <i class="fas fa-cloud-download-alt"></i> AUTO-IMPORT & SCRAPE
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -3279,6 +3321,26 @@
                                 </div>
                                 <input type="number" id="conf-daily-checkin" placeholder="5"
                                     class="w-full bg-black/40 border border-white/10 focus:border-green-500 rounded-lg p-2.5">
+                            </div>
+                        </div>
+                        
+                        <!-- Leaderboard Rewards Configuration -->
+                        <div class="mt-6 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+                            <h5 class="text-sm font-bold text-yellow-400 mb-3 flex items-center">
+                                <i class="fas fa-trophy mr-2"></i> Referral Leaderboard Rewards (Top 10 Ranks)
+                            </h5>
+                            <p class="text-xs text-gray-400 mb-4">Enter 10 comma-separated values (Gems) for ranks 1 to 10 (e.g., 100,70,50,20,20,20,20,20,20,20).</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Weekly Leaderboard Prizes (Gems)</label>
+                                    <input type="text" id="conf-leaderboard-weekly" placeholder="100,70,50,20,20,20,20,20,20,20"
+                                        class="w-full bg-black/40 border border-white/10 focus:border-yellow-500 rounded-lg p-2.5 font-mono text-yellow-400">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Monthly Leaderboard Prizes (Gems)</label>
+                                    <input type="text" id="conf-leaderboard-monthly" placeholder="500,350,250,100,100,100,100,100,100,100"
+                                        class="w-full bg-black/40 border border-white/10 focus:border-yellow-500 rounded-lg p-2.5 font-mono text-yellow-400">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -7447,6 +7509,13 @@
                     document.getElementById('conf-taskreward').value = c.taskReward || 0;
                     if (document.getElementById('conf-usd-to-bdt'))
                         document.getElementById('conf-usd-to-bdt').value = c.usdToBdt || 120;
+                    
+                    // Leaderboard Rewards
+                    if (document.getElementById('conf-leaderboard-weekly'))
+                        document.getElementById('conf-leaderboard-weekly').value = c.leaderboardWeeklyRewards || '100,70,50,20,20,20,20,20,20,20';
+                    if (document.getElementById('conf-leaderboard-monthly'))
+                        document.getElementById('conf-leaderboard-monthly').value = c.leaderboardMonthlyRewards || '500,350,250,100,100,100,100,100,100,100';
+
                     // System Costs
                     if (document.getElementById('conf-premium-email-cost'))
                         document.getElementById('conf-premium-email-cost').value = c.premiumEmailCost || 0;
@@ -7623,6 +7692,8 @@
                 adReward: getValue('conf-adreward'),
                 zeroBalanceAdReward: getValue('conf-zerobalance-adreward'),
                 taskReward: getValue('conf-taskreward'),
+                leaderboardWeeklyRewards: getStringValue('conf-leaderboard-weekly'),
+                leaderboardMonthlyRewards: getStringValue('conf-leaderboard-monthly'),
 
                 // System Costs
                 premiumEmailCost: getValue('conf-premium-email-cost'),
@@ -8702,31 +8773,11 @@
 
         function saveFeatureFlags() {
             setFeatureFlagsStatus('Saving...', false);
-            const g = (id) => document.getElementById('ff-' + id)?.checked === true;
-            const payload = {
-                // Core Services
-                tempMail: g('tempMail'), virtualNumber: g('virtualNumber'), premiumMail: g('premiumMail'),
-                accountsShop: g('accountsShop'), cardsVcc: g('cardsVcc'), vpnServices: g('vpnServices'),
-                joinRequired: g('joinRequired'), requireTelegram: g('requireTelegram'),
-                // SMM & Traffic
-                home_aiPhoto: g('home_aiPhoto'), home_aiVideo: g('home_aiVideo'),
-                bgRemover: g('bgRemover'), home_bgRemover: g('home_bgRemover'),
-                videoDownloader: g('videoDownloader'), home_videoDownload: g('home_videoDownload'),
-                // Home Grid Buttons
-                home_verify: g('home_verify'), home_mail: g('home_mail'), home_number: g('home_number'),
-                home_gemini: g('home_gemini'), home_accountsShop: g('home_accountsShop'),
-                home_vccShop: g('home_vccShop'), home_vpn: g('home_vpn'),
-                // Rewards & Engagement
-                dailyCheckin: g('dailyCheckin'), tasksSystem: g('tasksSystem'), redeemCodes: g('redeemCodes'),
-                referralSystem: g('referralSystem'), quizFeature: g('quizFeature'), exchange: g('exchange'),
-                scratchCard: g('scratchCard'), leaderboard: g('leaderboard'),
-                // Live Tools
-                live2fa: g('live2fa'), liveInstagram: g('liveInstagram'), liveFacebook: g('liveFacebook'),
-                liveTiktok: g('liveTiktok'), liveTwitter: g('liveTwitter'), liveThreads: g('liveThreads'),
-                // Finance
-                depositBinance: g('depositBinance'), depositCrypto: g('depositCrypto'),
-                transferTokens: g('transferTokens'), apiKeyAccess: g('apiKeyAccess'), itemSell: g('itemSell')
-            };
+            const payload = {};
+            document.querySelectorAll('[id^="ff-"]').forEach(el => {
+                const key = el.id.substring(3);
+                payload[key] = el.checked;
+            });
 
             fetch('/api/admin/features', {
                 method: 'POST',
@@ -14589,6 +14640,42 @@
                 if (data.success) loadManualNumbers();
                 else alert('Error deleting');
             } catch (e) { alert('Network error'); }
+        }
+
+        async function scrapeFreeNumbers() {
+            const urls = document.getElementById('free-sms-urls').value.trim();
+            const platform = document.getElementById('free-sms-platform').value;
+            const countryCode = document.getElementById('free-sms-country').value.trim();
+            const btn = document.getElementById('btn-scrape-free');
+
+            if (!urls) {
+                alert('Please provide at least one Free SMS Site URL');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> SCRAPING & IMPORTING...';
+
+            try {
+                const response = await fetch('/api/admin/scrape-free-numbers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls: urls.split('\n'), platform, countryCode })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(`Successfully scraped & imported ${data.count} virtual numbers!`);
+                    loadManualNumbers(); // reload table
+                } else {
+                    alert(data.error || 'Scraping failed');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Network error while scraping');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-cloud-download-alt mr-1"></i> AUTO-IMPORT & SCRAPE';
+            }
         }
 
         function openOtpModal(id) {
