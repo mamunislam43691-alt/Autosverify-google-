@@ -2955,6 +2955,23 @@
                     </div>
                 </div>
 
+                <!-- View Manual Number Messages Modal -->
+                <div id="viewNumberMessagesModal" class="modal-overlay">
+                    <div class="modal-body glass-card p-6 rounded-2xl max-w-2xl w-full">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="font-bold flex items-center gap-2">
+                                <i class="fas fa-envelope text-green-400"></i> SMS INBOX FOR <span id="viewing-sms-number" class="text-orange-400 font-mono"></span>
+                            </h3>
+                            <button onclick="closeModal('viewNumberMessagesModal')" class="text-gray-400 hover:text-white">
+                                <i class="fas fa-times font-bold text-lg"></i>
+                            </button>
+                        </div>
+                        <div class="max-h-[50vh] overflow-y-auto space-y-4 pr-1" id="viewing-sms-list">
+                            <div class="text-center py-8 text-gray-500 italic">No messages found</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Add Manual Number Modal -->
                 <div id="addNumberModal" class="modal-overlay">
                     <div class="modal-body glass-card p-6 rounded-2xl">
@@ -3509,6 +3526,20 @@
                                     </select>
                                 </div>
                                 <input type="number" id="conf-number" placeholder="100"
+                                    class="w-full bg-black/40 border border-white/10 focus:border-cyan-500 rounded-lg p-2.5">
+                            </div>
+
+                            <!-- Verification Cost -->
+                            <div class="bg-black/20 rounded-lg p-4 border border-white/5">
+                                <div class="flex justify-between items-center mb-2">
+                                    <label class="text-sm font-semibold text-gray-300">Verification Cost</label>
+                                    <select id="currency-verification"
+                                        class="bg-black/40 border border-white/10 rounded px-2 py-1 text-xs">
+                                        <option value="token">Tokens</option>
+                                        <option value="Gems">Gems</option>
+                                    </select>
+                                </div>
+                                <input type="number" id="conf-verification" placeholder="100"
                                     class="w-full bg-black/40 border border-white/10 focus:border-cyan-500 rounded-lg p-2.5">
                             </div>
 
@@ -5478,6 +5509,20 @@
                                         </div>
                                     </label>
                                 </div>
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-red-500/20">
+                                    <div>
+                                        <div class="text-sm font-bold text-red-400 flex items-center gap-1">
+                                            <i class="fas fa-ban text-xs animate-pulse"></i> Block Channel Accounts (চ্যানেল অ্যাকাউন্ট ব্যান)
+                                        </div>
+                                        <div class="text-[10px] text-gray-500">Auto-ban channels joining or posting in group (লাইভ স্ট্রিম প্রোটেকশন)</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_blockChannelAccounts" class="sr-only peer">
+                                        <div
+                                            class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500">
+                                        </div>
+                                    </label>
+                                </div>
                             </div>
                             <!-- Warning System -->
                             <div class="pt-4 border-t border-white/10 mb-4">
@@ -5599,6 +5644,107 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                <!-- Telegram Live Stream Automation Card -->
+                <div class="glass-card p-4 md:p-6 rounded-2xl mb-6 border border-purple-500/20">
+                    <h4 class="font-bold flex items-center gap-2 mb-2 text-purple-400">
+                        <i class="fas fa-video animate-pulse"></i> Telegram Live Stream Automation (লাইভ স্ট্রিম অটোমেশন)
+                    </h4>
+                    <p class="text-xs text-gray-400 mb-6 font-medium">
+                        Configure automatic live streaming to your Telegram groups or channels. You can run pre-made test pattern loops or supply customized direct stream video links (MP4) and manage start/stop schedules.
+                    </p>
+
+                    <!-- Stream Setup Form -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Server URL (RTMPS)</label>
+                            <input id="stream_server_url" type="text" placeholder="rtmps://dc5-1.rtmp.t.me/s/" 
+                                class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono">
+                            <p class="text-[10px] text-gray-500 mt-1">Found under your Group/Channel's Live Stream settings.</p>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Stream Key</label>
+                            <input id="stream_key" type="password" placeholder="Enter stream key" 
+                                class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono">
+                            <p class="text-[10px] text-gray-500 mt-1">Keep this key secret and secure.</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div>
+                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Video Source</label>
+                            <select id="stream_video_source" onchange="toggleCustomVideoInput()"
+                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none font-bold">
+                                <option value="testsrc">💻 Built-in HD Test Pattern (No download, 100% stable)</option>
+                                <option value="custom">🔗 Custom Direct MP4 Video URL</option>
+                            </select>
+                        </div>
+                        <div id="custom_video_url_container" style="display: none;" class="md:col-span-2">
+                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Direct MP4 Video URL</label>
+                            <input id="stream_custom_video_url" type="text" placeholder="https://example.com/video.mp4" 
+                                class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 border-t border-white/5 pt-4">
+                        <div>
+                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Start Time Schedule</label>
+                            <select id="stream_start_mode" onchange="toggleScheduleStartInput()"
+                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none mb-2 font-bold">
+                                <option value="now">⚡ Start Immediately (তাত্ক্ষণিক শুরু)</option>
+                                <option value="scheduled">⏰ Set Schedule (সিডিউল সময় নির্ধারণ)</option>
+                            </select>
+                            <input id="stream_start_time" type="datetime-local" style="display: none;"
+                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none font-mono">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Stop Time Schedule</label>
+                            <select id="stream_stop_mode" onchange="toggleScheduleStopInput()"
+                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none mb-2 font-bold">
+                                <option value="manual">🛑 Manual Stop Only (ম্যানুয়াল স্টপ)</option>
+                                <option value="scheduled">⏰ Set Auto-Stop Time (স্বয়ংক্রিয় বন্ধের সময়)</option>
+                            </select>
+                            <input id="stream_stop_time" type="datetime-local" style="display: none;"
+                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none font-mono">
+                        </div>
+                        <div class="flex flex-col justify-end">
+                            <div class="flex items-center gap-2 mb-4 p-3 bg-black/20 rounded-lg h-[46px]">
+                                <input id="stream_loop" type="checkbox" class="w-4 h-4 accent-purple-500" checked>
+                                <label class="text-xs text-gray-300 font-bold select-none cursor-pointer" for="stream_loop">🔁 Loop Video Infinitely (টানা চালানো)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button onclick="createLiveStream()" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 mb-6 transition-all transform hover:scale-[1.01]">
+                        <i class="fas fa-play"></i> START / SCHEDULE LIVE STREAM (লাইভ স্ট্রিম চালু করুন)
+                    </button>
+
+                    <!-- Active and History Table -->
+                    <div class="border-t border-white/10 pt-6">
+                        <h5 class="font-bold text-sm mb-4 flex items-center gap-2 text-gray-300">
+                            <i class="fas fa-history text-purple-400"></i> Stream Automation Status & Logs (লাইভ স্ট্রিম হিস্টোরি ও স্ট্যাটাস)
+                        </h5>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="text-gray-400 border-b border-white/10 uppercase">
+                                    <tr>
+                                        <th class="py-2">Source / Key</th>
+                                        <th class="py-2">Status</th>
+                                        <th class="py-2">Loop</th>
+                                        <th class="py-2">Start Time</th>
+                                        <th class="py-2">Stop Time</th>
+                                        <th class="py-2 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="liveStreamsTableBody">
+                                    <tr>
+                                        <td colspan="6" class="py-4 text-center text-gray-500 italic">No live streams configured. Setup a stream above to start!</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -6185,6 +6331,7 @@
                         'gm_deleteUserLinks': 'deleteUserLinks',
                         'gm_deleteMentionsHashtags': 'deleteMentionsHashtags',
                         'gm_deleteDmSolicitations': 'deleteDmSolicitations',
+                        'gm_blockChannelAccounts': 'blockChannelAccounts',
                         'gm_enableWarningSystem': 'enableWarningSystem',
                         'gm_enableBanCommand': 'enableBanCommand',
                         'gm_autoApproveJoinRequests': 'autoApproveJoinRequests'
@@ -7543,8 +7690,8 @@
                     if (document.getElementById('currency-liveTwitter')) document.getElementById('currency-liveTwitter').value = c.liveTwitterCurrency || 'token';
                     if (document.getElementById('currency-liveThreads')) document.getElementById('currency-liveThreads').value = c.liveThreadsCurrency || 'token';
 
-                    document.getElementById('conf-verification').value = c.verificationCost || 0;
-                    document.getElementById('conf-number').value = c.numberCost || 0;
+                    if (document.getElementById('conf-verification')) document.getElementById('conf-verification').value = c.verificationCost || 0;
+                    if (document.getElementById('conf-number')) document.getElementById('conf-number').value = c.numberCost || 0;
                     // Additional Service Costs
                     if (document.getElementById('conf-gemini')) document.getElementById('conf-gemini').value = c.geminiCost || 0;
                     if (document.getElementById('conf-chatgpt')) document.getElementById('conf-chatgpt').value = c.chatgptCost || 0;
@@ -11779,6 +11926,13 @@
                 const settingsData = await settingsRes.json();
                 if (settingsData.success) renderGroupSettings(settingsData.settings);
             } catch (e) { console.error('Failed to load group settings'); }
+
+            // Load Live Stream automation logs & active streams
+            try {
+                if (typeof loadLiveStreams === 'function') {
+                    await loadLiveStreams();
+                }
+            } catch (e) { console.error('Failed to load live streams:', e); }
         }
 
         function renderGroupsTable(groups) {
@@ -12006,6 +12160,200 @@
             a.download = 'groups-list.csv';
             a.click();
             URL.revokeObjectURL(url);
+        }
+
+        // TELEGRAM LIVE STREAM AUTOMATION
+        function toggleCustomVideoInput() {
+            const select = document.getElementById('stream_video_source');
+            const container = document.getElementById('custom_video_url_container');
+            if (select && container) {
+                container.style.display = select.value === 'custom' ? 'block' : 'none';
+            }
+        }
+
+        function toggleScheduleStartInput() {
+            const select = document.getElementById('stream_start_mode');
+            const picker = document.getElementById('stream_start_time');
+            if (select && picker) {
+                picker.style.display = select.value === 'scheduled' ? 'block' : 'none';
+            }
+        }
+
+        function toggleScheduleStopInput() {
+            const select = document.getElementById('stream_stop_mode');
+            const picker = document.getElementById('stream_stop_time');
+            if (select && picker) {
+                picker.style.display = select.value === 'scheduled' ? 'block' : 'none';
+            }
+        }
+
+        async function loadLiveStreams() {
+            try {
+                const res = await fetch('/api/admin/live-streams');
+                const data = await res.json();
+                if (data.success) {
+                    renderLiveStreamsTable(data.streams || []);
+                }
+            } catch (e) {
+                console.error('Failed to load live streams:', e);
+            }
+        }
+
+        function renderLiveStreamsTable(streams) {
+            const tbody = document.getElementById('liveStreamsTableBody');
+            if (!tbody) return;
+
+            if (streams.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="py-4 text-center text-gray-500 italic">No live streams configured. Setup a stream above to start!</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = streams.map(s => {
+                const sourceText = s.videoSource === 'testsrc' 
+                    ? '<span class="text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded font-bold"><i class="fas fa-desktop mr-1"></i>Test Pattern</span>' 
+                    : `<span class="text-xs text-blue-400 font-mono break-all font-semibold">${s.videoSource}</span>`;
+                
+                const keyText = `<span class="text-[10px] font-mono text-gray-400 bg-white/5 px-1 py-0.5 rounded">...${s.streamKey.substring(Math.max(0, s.streamKey.length - 8))}</span>`;
+
+                let statusBadge = '';
+                if (s.status === 'active') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-green-500/20 text-green-400 animate-pulse"><i class="fas fa-circle text-[8px] mr-1"></i>ACTIVE</span>';
+                } else if (s.status === 'scheduled') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-400"><i class="far fa-clock mr-1"></i>SCHEDULED</span>';
+                } else if (s.status === 'stopped') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-500/20 text-gray-400"><i class="fas fa-stop mr-1"></i>STOPPED</span>';
+                } else if (s.status === 'completed') {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-400"><i class="fas fa-check mr-1"></i>COMPLETED</span>';
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 cursor-help" title="${s.error || 'Unknown Error'}"><i class="fas fa-exclamation-triangle mr-1"></i>FAILED</span>`;
+                }
+
+                const loopBadge = s.loop 
+                    ? '<span class="text-xs text-green-400 font-bold"><i class="fas fa-redo"></i> Yes</span>' 
+                    : '<span class="text-xs text-gray-500">No</span>';
+
+                const formatTime = (iso) => iso ? new Date(iso).toLocaleString() : '<span class="text-gray-600">—</span>';
+                
+                const startText = s.startTime ? formatTime(s.startTime) : '<span class="text-green-500 font-bold">Immediate</span>';
+                const stopText = s.stopTime ? formatTime(s.stopTime) : '<span class="text-gray-500">Manual Only</span>';
+
+                let actionBtn = '';
+                if (s.status === 'active' || s.status === 'scheduled') {
+                    actionBtn = `<button onclick="stopLiveStream('${s.id}')" class="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 px-2.5 py-1 rounded-lg mr-2 transition-all" title="Stop Stream"><i class="fas fa-stop"></i> Stop</button>`;
+                }
+                actionBtn += `<button onclick="deleteLiveStream('${s.id}')" class="bg-red-500/20 hover:bg-red-500/30 text-red-400 px-2.5 py-1 rounded-lg transition-all" title="Delete stream"><i class="fas fa-trash-alt"></i></button>`;
+
+                return `
+                    <tr class="border-b border-white/5 hover:bg-white/5">
+                        <td class="py-3">
+                            <div class="flex flex-col gap-1">
+                                <div>${sourceText}</div>
+                                <div>${keyText}</div>
+                                ${s.error ? `<div class="text-[10px] text-red-400 font-medium">Error: ${s.error}</div>` : ''}
+                            </div>
+                        </td>
+                        <td class="py-3">${statusBadge}</td>
+                        <td class="py-3">${loopBadge}</td>
+                        <td class="py-3 text-gray-300 font-mono text-[10px]">${startText}</td>
+                        <td class="py-3 text-gray-300 font-mono text-[10px]">${stopText}</td>
+                        <td class="py-3 text-right">
+                            <div class="flex gap-1 justify-end">${actionBtn}</div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function createLiveStream() {
+            const serverUrl = document.getElementById('stream_server_url').value.trim();
+            const streamKey = document.getElementById('stream_key').value.trim();
+            const videoSelect = document.getElementById('stream_video_source').value;
+            const customVideoUrl = document.getElementById('stream_custom_video_url').value.trim();
+            const startMode = document.getElementById('stream_start_mode').value;
+            const startTimeVal = document.getElementById('stream_start_time').value;
+            const stopMode = document.getElementById('stream_stop_mode').value;
+            const stopTimeVal = document.getElementById('stream_stop_time').value;
+            const loop = document.getElementById('stream_loop').checked;
+
+            if (!serverUrl) {
+                alert('Please enter your Server URL (RTMPS)');
+                return;
+            }
+            if (!streamKey) {
+                alert('Please enter your Stream Key');
+                return;
+            }
+
+            const videoSource = videoSelect === 'custom' ? customVideoUrl : 'testsrc';
+            if (videoSelect === 'custom' && !customVideoUrl) {
+                alert('Please specify direct MP4 video URL');
+                return;
+            }
+
+            const startTime = startMode === 'scheduled' && startTimeVal ? new Date(startTimeVal).toISOString() : null;
+            const stopTime = stopMode === 'scheduled' && stopTimeVal ? new Date(stopTimeVal).toISOString() : null;
+
+            try {
+                const res = await fetch('/api/admin/live-streams', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        serverUrl,
+                        streamKey,
+                        videoSource,
+                        loop,
+                        startTime,
+                        stopTime
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    alert(startTime ? 'Live Stream Scheduled Successfully!' : 'Live Stream Started Successfully!');
+                    // Reset fields
+                    document.getElementById('stream_key').value = '';
+                    document.getElementById('stream_custom_video_url').value = '';
+                    loadLiveStreams();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Failed to launch stream: ' + e.message);
+            }
+        }
+
+        async function stopLiveStream(id) {
+            if (!confirm('Are you sure you want to stop this Live Stream?')) return;
+            try {
+                const res = await fetch(`/api/admin/live-streams/${id}/stop`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    loadLiveStreams();
+                } else {
+                    alert('Failed to stop: ' + data.error);
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function deleteLiveStream(id) {
+            if (!confirm('Are you sure you want to delete this live stream log/configuration?')) return;
+            try {
+                const res = await fetch(`/api/admin/live-streams/${id}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    loadLiveStreams();
+                } else {
+                    alert('Failed to delete: ' + data.error);
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
         }
 
 
@@ -14027,6 +14375,7 @@
                     document.getElementById('gm_deleteUserLinks').checked = s.deleteUserLinks === true;
                     document.getElementById('gm_deleteMentionsHashtags').checked = s.deleteMentionsHashtags === true;
                     document.getElementById('gm_deleteDmSolicitations').checked = s.deleteDmSolicitations === true;
+                    document.getElementById('gm_blockChannelAccounts').checked = s.blockChannelAccounts === true;
                     document.getElementById('gm_enableWarningSystem').checked = s.enableWarningSystem === true;
                     document.getElementById('gm_warningMessage').value = s.warningMessage || 'Warning {username}! This is strike {strikes}/3. Next violation will result in a ban.';
                     document.getElementById('gm_enableBanCommand').checked = s.enableBanCommand === true;
@@ -14064,6 +14413,7 @@
                 deleteUserLinks: document.getElementById('gm_deleteUserLinks')?.checked || false,
                 deleteMentionsHashtags: document.getElementById('gm_deleteMentionsHashtags')?.checked || false,
                 deleteDmSolicitations: document.getElementById('gm_deleteDmSolicitations')?.checked || false,
+                blockChannelAccounts: document.getElementById('gm_blockChannelAccounts')?.checked || false,
                 enableWarningSystem: document.getElementById('gm_enableWarningSystem')?.checked || false,
                 warningMessage: document.getElementById('gm_warningMessage')?.value || "",
                 enableBanCommand: document.getElementById('gm_enableBanCommand')?.checked || false,
@@ -14403,13 +14753,14 @@
                         <td class="py-4">
                             <div class="flex items-center gap-2">
                                 <span class="px-2 py-0.5 rounded text-[10px] font-bold ${n.status === 'available' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}">
-                                    ${n.status.toUpperCase()}
+                                     ${n.status.toUpperCase()}
                                 </span>
                                 ${n.otp ? `<span class="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-mono font-bold">OTP: ${n.otp}</span>` : ''}
                             </div>
                         </td>
                         <td class="py-4 text-right">
                              <div class="flex justify-end gap-2">
+                                <button onclick="viewManualNumberMessages('${n.number}', '${n.countryCode || '1'}')" class="p-2 bg-green-500/10 text-green-400 rounded-lg" title="View Incoming Messages"><i class="fas fa-envelope"></i></button>
                                 <button onclick="openOtpModal('${n.id}')" class="p-2 bg-blue-500/10 text-blue-400 rounded-lg" title="Manual OTP"><i class="fas fa-key"></i></button>
                                 <button onclick="deleteManualNumber('${n.id}')" class="p-2 bg-red-500/10 text-red-400 rounded-lg" title="Delete"><i class="fas fa-trash"></i></button>
                              </div>
@@ -14675,6 +15026,33 @@
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-cloud-download-alt mr-1"></i> AUTO-IMPORT & SCRAPE';
+            }
+        }
+
+        async function viewManualNumberMessages(number, countryCode) {
+            document.getElementById('viewing-sms-number').textContent = number;
+            const listContainer = document.getElementById('viewing-sms-list');
+            listContainer.innerHTML = '<div class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Loading messages...</div>';
+            openModal('viewNumberMessagesModal');
+
+            try {
+                const res = await fetch(`/api/admin/manual-numbers/messages?number=${encodeURIComponent(number)}&countryCode=${countryCode || '1'}`);
+                const data = await res.json();
+                if (data.success && data.messages && data.messages.length > 0) {
+                    listContainer.innerHTML = data.messages.map(m => `
+                        <div class="p-4 bg-white/5 rounded-xl border border-white/5 space-y-1">
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs font-bold text-orange-400">${m.sender}</span>
+                                <span class="text-[10px] text-gray-500">${m.time || 'Just now'}</span>
+                            </div>
+                            <p class="text-sm text-gray-300 font-medium">${m.content}</p>
+                        </div>
+                    `).join('');
+                } else {
+                    listContainer.innerHTML = '<div class="text-center py-8 text-gray-500 italic">No messages found on the public site page. Make sure the site has received SMS.</div>';
+                }
+            } catch (e) {
+                listContainer.innerHTML = '<div class="text-center py-8 text-red-400">❌ Error loading messages. Make sure URL is scrapable.</div>';
             }
         }
 

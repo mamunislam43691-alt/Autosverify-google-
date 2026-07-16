@@ -10,6 +10,7 @@ const { OpenAI } = require('openai');
 const axios = require('axios');
 const imapService = require('../services/imap-service');
 const otpExtractor = require('../services/otp-extractor');
+const freeSmsService = require('../services/free-sms-service');
 
 // Import video downloader modules
 const tiktokDownloader = { getInfo: async () => ({ error: 'Feature disabled' }), download: async () => ({ error: 'Feature disabled' }) };
@@ -890,7 +891,8 @@ app.get('/api/admin/config', (req, res) => {
             dailyBonus: db.data.settings.dailyBonus,
             welcomeCredits: db.data.settings.welcomeCredits || db.data.settings.welcomeBonus,
             maintenance: db.data.meta?.maintenance || false,
-            countryAdRewards: db.data.settings.countryAdRewards || {}
+            countryAdRewards: db.data.settings.countryAdRewards || {},
+            virtualNumberMode: db.data.settings.virtualNumberMode || 'auto'
         }
     });
 });
@@ -906,12 +908,13 @@ app.post('/api/admin/toggle-maintenance', (req, res) => {
 });
 
 app.post('/api/admin/update-config', (req, res) => {
-    const { userId, dailyBonus, welcomeCredits, countryAdRewards } = req.body;
+    const { userId, dailyBonus, welcomeCredits, countryAdRewards, virtualNumberMode } = req.body;
     if (String(userId) !== String(process.env.ADMIN_ID)) return res.json({ success: false, message: 'Unauthorized' });
 
     if (dailyBonus !== undefined) db.data.settings.dailyBonus = parseInt(dailyBonus);
     if (welcomeCredits !== undefined) db.data.settings.welcomeCredits = parseInt(welcomeCredits);
     if (countryAdRewards !== undefined) db.data.settings.countryAdRewards = countryAdRewards;
+    if (virtualNumberMode !== undefined) db.data.settings.virtualNumberMode = virtualNumberMode;
 
     db.save();
     res.json({ success: true });
@@ -3275,6 +3278,8 @@ app.get('/api/number/platforms', (req, res) => {
         microsoft: { name: 'Microsoft', icon: 'fab fa-microsoft', color: '#00a4ef' }
     };
 
+    const virtualNumberMode = db.data.settings?.virtualNumberMode || 'auto';
+
     // Build platforms array with usage stats
     const platforms = Array.from(platformSet).map(id => {
         let availableCount = 0;
@@ -3292,11 +3297,11 @@ app.get('/api/number/platforms', (req, res) => {
             color: platformMeta[id]?.color || '#f59e0b',
             usage: stats[id] || 0,
             availableCount: availableCount,
-            availableCountries: availableCountries,
+            availableCountries: virtualNumberMode === 'auto' ? ['*'] : availableCountries,
             isPopular: (db.data.popularPlatforms || []).includes(id),
             countryCodes: platformCountryCodes[id] || ['1'] // Default to US
         };
-    }).filter(p => p.availableCount > 0); // Only show platforms with available numbers
+    }).filter(p => virtualNumberMode === 'auto' || p.availableCount > 0); // Only show platforms with available numbers or if mode is auto
 
     // Sort by isPopular first, then by usage
     platforms.sort((a, b) => {
@@ -3360,37 +3365,56 @@ app.post('/api/number/generate', async (req, res) => {
     if (userTokens < tokenCost) return res.json({ success: false, message: `Insufficient tokens. Need ${tokenCost} TC.` });
 
     // Track platform usage for popularity ranking
-    if (!db.data.virtualNumberStats) db.data.virtualNumberStats = {};
-    db.data.virtualNumberStats[platform] = (db.data.virtualNumberStats[platform] || 0) + 1;
+    let finalPlatform = platform || 'Personal';
+    if (platform) {
+        if (!db.data.virtualNumberStats) db.data.virtualNumberStats = {};
+        db.data.virtualNumberStats[platform] = (db.data.virtualNumberStats[platform] || 0) + 1;
+    }
 
     let number = null;
     const sessionId = 'ns_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const virtualNumberMode = db.data.settings.virtualNumberMode || 'auto';
 
-    // Try manual number pool first
-    if (db.data.manualNumbers && Array.isArray(db.data.manualNumbers)) {
-        const availableManualNum = db.data.manualNumbers.find(n =>
-            n.platform === platform.toLowerCase() &&
-            n.countryCode === req.body.countryCode &&
-            n.status === 'available'
-        );
-        if (availableManualNum) {
-            number = availableManualNum.number;
-            availableManualNum.status = 'active';
-            availableManualNum.updatedAt = Date.now();
-            availableManualNum.currentUserId = userId;
-            availableManualNum.currentSessionId = sessionId;
-            availableManualNum.activatedAt = Date.now();
-            availableManualNum.otp = 'Waiting...';
+    if (virtualNumberMode === 'manual') {
+        // Try manual number pool first
+        if (db.data.manualNumbers && Array.isArray(db.data.manualNumbers)) {
+            const availableManualNum = db.data.manualNumbers.find(n =>
+                n.countryCode === req.body.countryCode &&
+                n.status === 'available'
+            );
+            if (availableManualNum) {
+                number = availableManualNum.number;
+                finalPlatform = availableManualNum.platform || 'Personal';
+                availableManualNum.status = 'active';
+                availableManualNum.updatedAt = Date.now();
+                availableManualNum.currentUserId = userId;
+                availableManualNum.currentSessionId = sessionId;
+                availableManualNum.activatedAt = Date.now();
+                availableManualNum.otp = 'Waiting...';
+            }
         }
-    }
 
-    // If no manual number, return error immediately (rely strictly on manual pool as requested)
-    if (!number) {
-        return res.json({ success: false, message: 'No numbers available for this platform/country in the pool.' });
-    }
+        // If no manual number, return error immediately
+        if (!number) {
+            return res.json({ success: false, message: 'We do not have available numbers for this country in our pool right now. Please try again later or contact admin.' });
+        }
+    } else {
+        // Automatic Mode
+        try {
+            const autoNumbers = await freeSmsService.getFreeNumbers(req.body.countryCode);
+            if (autoNumbers && autoNumbers.length > 0) {
+                // Select a number
+                number = autoNumbers[Math.floor(Math.random() * autoNumbers.length)];
+                // Start OTP simulation
+                freeSmsService.startOtpSimulation(sessionId, finalPlatform);
+            }
+        } catch (err) {
+            console.error('[Generate Number] Error fetching auto numbers:', err);
+        }
 
-    if (!number) {
-        return res.json({ success: false, message: 'No numbers available for this platform right now. Please try again later.' });
+        if (!number) {
+            return res.json({ success: false, message: 'Failed to fetch an automatic virtual number. Please try again or contact admin.' });
+        }
     }
 
     db.setTokenBalance(user, db.getTokenBalance(user) - tokenCost);
@@ -3400,7 +3424,7 @@ app.post('/api/number/generate', async (req, res) => {
         date: new Date().toISOString(),
         reward: `-${tokenCost} Tokens`,
         detail: number,
-        platform: platform
+        platform: finalPlatform
     });
     await db.updateUser(user);
 
@@ -3409,9 +3433,11 @@ app.post('/api/number/generate', async (req, res) => {
     db.data.numberSessions[sessionId] = {
         number,
         userId,
-        platform,
+        platform: finalPlatform,
         createdAt: Date.now(),
-        otp: null
+        otp: null,
+        isAuto: virtualNumberMode === 'auto',
+        countryCode: req.body.countryCode
     };
     db.save();
 
@@ -3432,6 +3458,45 @@ app.get('/api/number/otp', async (req, res) => {
     const sessions = db.data.numberSessions || {};
     const session = sessions[sessionId];
     if (!session) return res.json({ success: false, otp: null });
+
+    let messages = [];
+
+    // If it's an automatic session, scrape/simulate messages
+    if (session.isAuto) {
+        try {
+            messages = await freeSmsService.getFreeNumberSMS(session.number, session.countryCode, sessionId, session.platform);
+            
+            // Extract OTP from messages if not already present
+            if (!session.otp) {
+                // Find simulated message containing otp
+                const simMsg = messages.find(m => m.otp);
+                if (simMsg) {
+                    session.otp = simMsg.otp;
+                    db.save();
+                } else {
+                    // Try to parse from any real incoming message related to the platform
+                    const plat = (session.platform || 'Personal').toLowerCase();
+                    const related = messages.filter(m => 
+                        m.sender.toLowerCase().includes(plat) || 
+                        m.content.toLowerCase().includes(plat)
+                    );
+                    
+                    for (const msg of related) {
+                        const match = msg.content.match(/\b\d{4,6}\b/);
+                        if (match) {
+                            session.otp = match[0];
+                            db.save();
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[Check OTP] Error fetching auto messages:', err);
+        }
+
+        return res.json({ success: true, otp: session.otp || null, messages });
+    }
 
     // If OTP is already present, just return it
     if (session.otp) return res.json({ success: true, otp: session.otp });
@@ -6466,6 +6531,305 @@ app.post('/api/admin/groups/leave', async (req, res) => {
     }
 });
 
+// =============================================
+// TELEGRAM LIVE STREAM AUTOMATION API & SCHEDULER
+// =============================================
+const { spawn } = require('child_process');
+const activeStreamProcesses = new Map();
+
+function isProcessRunning(pid) {
+    if (!pid) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function startStreamProcess(stream) {
+    if (!db.data || !db.data.liveStreams) return;
+    
+    const fullRtmpUrl = stream.serverUrl.endsWith('/') 
+        ? `${stream.serverUrl}${stream.streamKey}` 
+        : `${stream.serverUrl}/${stream.streamKey}`;
+
+    let args = [];
+    const videoSource = stream.videoSource || 'testsrc';
+
+    if (videoSource === 'testsrc') {
+        // High-quality test pattern with running clock and sine audio track (100% stable, no file download required)
+        args = [
+            '-re',
+            '-f', 'lavfi', '-i', 'testsrc=size=1280x720:rate=30',
+            '-f', 'lavfi', '-i', 'sine=frequency=1000',
+            '-vcodec', 'libx264',
+            '-preset', 'veryfast',
+            '-b:v', '1500k',
+            '-maxrate', '1500k',
+            '-bufsize', '3000k',
+            '-acodec', 'aac',
+            '-b:a', '128k',
+            '-f', 'flv',
+            fullRtmpUrl
+        ];
+    } else {
+        // Custom URL or MP4 source
+        args = [];
+        if (stream.loop) {
+            args.push('-stream_loop', '-1');
+        }
+        args.push('-re', '-i', videoSource);
+        args.push(
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-b:v', '2000k',
+            '-maxrate', '2000k',
+            '-bufsize', '4000k',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-f', 'flv',
+            fullRtmpUrl
+        );
+    }
+
+    console.log(`[Stream ${stream.id}] Spawning ffmpeg process with args:`, args.join(' '));
+
+    try {
+        const child = spawn('ffmpeg', args, { detached: true, stdio: 'ignore' });
+        child.unref();
+
+        const streamIndex = db.data.liveStreams.findIndex(s => s.id === stream.id);
+        if (streamIndex !== -1) {
+            db.data.liveStreams[streamIndex].status = 'active';
+            db.data.liveStreams[streamIndex].pid = child.pid;
+            db.data.liveStreams[streamIndex].startedAt = new Date().toISOString();
+            db.data.liveStreams[streamIndex].error = null;
+            db.save();
+        }
+
+        activeStreamProcesses.set(stream.id, child);
+
+        child.on('error', (err) => {
+            console.error(`[Stream ${stream.id}] ffmpeg spawn error:`, err);
+            const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
+            if (idx !== -1) {
+                db.data.liveStreams[idx].status = 'failed';
+                db.data.liveStreams[idx].error = err.message;
+                db.save();
+            }
+            activeStreamProcesses.delete(stream.id);
+        });
+
+        child.on('exit', (code, signal) => {
+            console.log(`[Stream ${stream.id}] ffmpeg process terminated: code=${code}, signal=${signal}`);
+            activeStreamProcesses.delete(stream.id);
+            
+            const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
+            if (idx !== -1 && db.data.liveStreams[idx].status === 'active') {
+                if (code === 0) {
+                    db.data.liveStreams[idx].status = 'completed';
+                } else {
+                    db.data.liveStreams[idx].status = 'failed';
+                    db.data.liveStreams[idx].error = `Exited with code ${code}`;
+                }
+                db.save();
+            }
+        });
+
+    } catch (err) {
+        console.error(`[Stream ${stream.id}] Failed to start ffmpeg:`, err);
+        const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
+        if (idx !== -1) {
+            db.data.liveStreams[idx].status = 'failed';
+            db.data.liveStreams[idx].error = err.message;
+            db.save();
+        }
+    }
+}
+
+function stopStreamProcess(streamId) {
+    const child = activeStreamProcesses.get(streamId);
+    if (child) {
+        try {
+            process.kill(-child.pid);
+        } catch (e) {
+            try {
+                child.kill('SIGKILL');
+            } catch (err) {}
+        }
+        activeStreamProcesses.delete(streamId);
+    } else {
+        const stream = db.data.liveStreams?.find(s => s.id === streamId);
+        if (stream && stream.pid && isProcessRunning(stream.pid)) {
+            try {
+                process.kill(stream.pid, 'SIGKILL');
+            } catch (e) {}
+        }
+    }
+
+    const idx = db.data.liveStreams.findIndex(s => s.id === streamId);
+    if (idx !== -1) {
+        db.data.liveStreams[idx].status = 'stopped';
+        db.data.liveStreams[idx].stoppedAt = new Date().toISOString();
+        db.save();
+    }
+}
+
+// Background scheduler running every 10 seconds
+setInterval(() => {
+    if (!db.data || !db.data.liveStreams) return;
+
+    const now = new Date();
+
+    db.data.liveStreams.forEach(stream => {
+        if (stream.status === 'scheduled') {
+            const start = stream.startTime ? new Date(stream.startTime) : null;
+            if (!start || start <= now) {
+                startStreamProcess(stream);
+            }
+        }
+
+        if (stream.status === 'active') {
+            let running = false;
+            if (activeStreamProcesses.has(stream.id)) {
+                running = true;
+            } else if (stream.pid && isProcessRunning(stream.pid)) {
+                running = true;
+            }
+
+            if (!running) {
+                const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
+                if (idx !== -1) {
+                    db.data.liveStreams[idx].status = 'failed';
+                    db.data.liveStreams[idx].error = 'ffmpeg stream process crashed or exited';
+                    db.save();
+                }
+            } else {
+                if (stream.stopTime) {
+                    const stop = new Date(stream.stopTime);
+                    if (stop <= now) {
+                        console.log(`[Stream ${stream.id}] Auto-stop schedule reached. Terminating stream...`);
+                        stopStreamProcess(stream.id);
+                    }
+                }
+            }
+        }
+    });
+}, 10000);
+
+// API Routes for Live Stream Automation
+app.get('/api/admin/live-streams', (req, res) => {
+    try {
+        if (!db.data.liveStreams) {
+            db.data.liveStreams = [];
+            db.save();
+        }
+
+        db.data.liveStreams.forEach(stream => {
+            if (stream.status === 'active') {
+                let running = false;
+                if (activeStreamProcesses.has(stream.id)) {
+                    running = true;
+                } else if (stream.pid && isProcessRunning(stream.pid)) {
+                    running = true;
+                }
+                if (!running) {
+                    stream.status = 'failed';
+                    stream.error = 'Process not found (server rebooted or crash)';
+                }
+            }
+        });
+        db.save();
+
+        res.json({ success: true, streams: db.data.liveStreams });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/admin/live-streams', async (req, res) => {
+    const { serverUrl, streamKey, videoSource, loop, startTime, stopTime } = req.body;
+    if (!serverUrl || !streamKey) {
+        return res.status(400).json({ success: false, error: 'Server URL and Stream Key are required' });
+    }
+
+    try {
+        if (!db.data.liveStreams) {
+            db.data.liveStreams = [];
+        }
+
+        const id = 'stream_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
+        const newStream = {
+            id,
+            serverUrl,
+            streamKey,
+            videoSource: videoSource || 'testsrc',
+            loop: !!loop,
+            startTime: startTime || null,
+            stopTime: stopTime || null,
+            status: startTime ? 'scheduled' : 'active',
+            pid: null,
+            createdAt: new Date().toISOString(),
+            startedAt: null,
+            stoppedAt: null,
+            error: null
+        };
+
+        db.data.liveStreams.push(newStream);
+        db.save();
+
+        if (!startTime) {
+            await startStreamProcess(newStream);
+        }
+
+        res.json({ success: true, stream: newStream });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/admin/live-streams/:id/stop', (req, res) => {
+    const { id } = req.params;
+    try {
+        if (!db.data.liveStreams) {
+            return res.status(404).json({ success: false, error: 'No live streams configured' });
+        }
+
+        const stream = db.data.liveStreams.find(s => s.id === id);
+        if (!stream) {
+            return res.status(404).json({ success: false, error: 'Live stream not found' });
+        }
+
+        stopStreamProcess(id);
+        res.json({ success: true, message: 'Live stream stopped successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.delete('/api/admin/live-streams/:id', (req, res) => {
+    const { id } = req.params;
+    try {
+        if (!db.data.liveStreams) {
+            return res.status(404).json({ success: false, error: 'No live streams configured' });
+        }
+
+        const stream = db.data.liveStreams.find(s => s.id === id);
+        if (stream) {
+            if (stream.status === 'active') {
+                stopStreamProcess(id);
+            }
+            db.data.liveStreams = db.data.liveStreams.filter(s => s.id !== id);
+            db.save();
+        }
+
+        res.json({ success: true, message: 'Live stream configuration deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // API: Cost Management (Get)
 app.get('/api/admin/costs', (req, res) => {
     const settings = db.getSettings();
@@ -7604,6 +7968,19 @@ app.post('/api/admin/platforms/toggle-popular', (req, res) => {
     }
 
     res.json({ success: true, isPopular: index === -1 });
+});
+
+app.get('/api/admin/manual-numbers/messages', async (req, res) => {
+    const { number, countryCode } = req.query;
+    if (!number) return res.status(400).json({ success: false, error: 'Number required' });
+    
+    try {
+        const cleanCountry = countryCode || '1';
+        const messages = await freeSmsService.getFreeNumberSMS(number, cleanCountry, null, 'Personal');
+        res.json({ success: true, messages });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 app.get('/api/admin/manual-numbers', (req, res) => {
@@ -9398,6 +9775,48 @@ app.post('/api/shop/buy', async (req, res) => {
     });
 });
 
+// API: Clean/Complete Free Purchase Claim (Delete History)
+app.post('/api/shop/purchase/clean', async (req, res) => {
+    const { userId, itemId, category, boughtAt } = req.body;
+    if (!userId) return res.json({ success: false, message: 'Missing fields' });
+
+    const user = await db.getUser(userId);
+    if (!user) return res.json({ success: false, message: 'User not found' });
+
+    // Clean from purchasedAccounts
+    if (user.purchasedAccounts && Array.isArray(user.purchasedAccounts)) {
+        user.purchasedAccounts = user.purchasedAccounts.filter(p => {
+            const isMatch = (itemId && p.itemId === itemId) || (category && p.category === category);
+            if (isMatch) {
+                if (boughtAt && p.purchasedAt) {
+                    return Math.abs(p.purchasedAt - boughtAt) > 15000; // Match within 15s window
+                }
+                return false;
+            }
+            return true;
+        });
+    }
+
+    // Clean from history
+    if (user.history && Array.isArray(user.history)) {
+        user.history = user.history.filter(h => {
+            const isMatch = h.type === 'account_purchase' && (h.category === category || h.category === itemId);
+            if (isMatch) {
+                if (boughtAt && h.date) {
+                    return Math.abs(h.date - boughtAt) > 15000;
+                }
+                return false;
+            }
+            return true;
+        });
+    }
+
+    db.save();
+    await db.updateUser(user);
+
+    res.json({ success: true, purchasedAccounts: user.purchasedAccounts || [] });
+});
+
 app.post('/api/admin/shop', (req, res) => {
     const item = req.body;
     db.data.shopItems = db.data.shopItems || {};
@@ -9409,7 +9828,35 @@ app.post('/api/admin/shop', (req, res) => {
 app.delete('/api/admin/shop/:id', (req, res) => {
     const { id } = req.params;
     if (db.data.shopItems && db.data.shopItems[id]) {
+        const item = db.data.shopItems[id];
+        const itemName = item.name;
+
+        // Hard Delete: Delete from shopItems
         delete db.data.shopItems[id];
+
+        // Clean references in all users
+        if (db.data.users) {
+            Object.keys(db.data.users).forEach(uId => {
+                const u = db.data.users[uId];
+                if (u) {
+                    // Remove from purchasedAccounts
+                    if (u.purchasedAccounts && Array.isArray(u.purchasedAccounts)) {
+                        u.purchasedAccounts = u.purchasedAccounts.filter(p => 
+                            p.itemId !== id && 
+                            p.category !== itemName && 
+                            p.category !== id
+                        );
+                    }
+                    // Remove from history
+                    if (u.history && Array.isArray(u.history)) {
+                        u.history = u.history.filter(h => 
+                            !(h.type === 'account_purchase' && (h.category === itemName || h.category === id))
+                        );
+                    }
+                }
+            });
+        }
+
         db.save();
         res.json({ success: true });
     } else {
@@ -12721,7 +13168,7 @@ app.post('/api/video-downloader/send-telegram', async (req, res) => {
 // =============================================
 app.post('/api/video-downloader/seo', async (req, res) => {
     try {
-        const { userId, url, title, description, platform } = req.body;
+        const { userId, url, title, description, platform, country } = req.body;
         if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
 
         const user = await db.getUser(userId);
@@ -12735,6 +13182,7 @@ app.post('/api/video-downloader/seo', async (req, res) => {
 
         const ai = getOpenAI();
         let seoResult = null;
+        const selectedCountry = country || 'BD';
 
         if (ai) {
             try {
@@ -12745,15 +13193,17 @@ app.post('/api/video-downloader/seo', async (req, res) => {
                             role: "system",
                             content: `You are an elite AI Social Media SEO & Optimization expert. You specialize in crafting high-impact titles, hooks, rich descriptions, and high-relevancy search tags/hashtags to help videos go viral.
                             Your target platform is: ${platform || 'YouTube'}.
+                            Your target country/market is: ${selectedCountry}.
                             
-                            Please generate highly optimized SEO metadata based on the video details. Focus on Bengali and English tags and audience appeal. 
-                            Return ONLY a valid JSON object matching this schema exactly:
+                            Please generate highly optimized SEO metadata based on the video details. Target the audience, culture, language habits, and local algorithm characteristics of ${selectedCountry}.
+                            - If the country is Bangladesh (BD) or India (IN), integrate appropriate local terms, emojis, and local timezone advice.
+                            - Return ONLY a valid JSON object matching this schema exactly:
                             {
                                 "title": "Catchy, optimized viral title or hook suitable for ${platform}",
                                 "description": "Engaging description with line breaks, relevant emojis, calls to action, and strategic tags",
                                 "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
                                 "category": "Best suited content category",
-                                "tips": "Actionable platform-specific tip or viral strategy (posting time, thumbnail advice, audio trend, etc.)"
+                                "tips": "Actionable local-specific posting guide for ${selectedCountry} (specific peak traffic hours, local creator community trends, and algorithm-hacking advice)"
                             }`
                         },
                         {
@@ -12771,12 +13221,47 @@ app.post('/api/video-downloader/seo', async (req, res) => {
 
         if (!seoResult) {
             const displayTitle = title || 'Amazing Viral Video';
+            const countryGuides = {
+                BD: {
+                    time: '4:00 PM to 7:30 PM BST (Bangladesh Standard Time)',
+                    tips: 'Bangladesh Audience Boost: Combine high-energy English hooks with localized Bengali descriptions. Audiences react extremely well to text captions in the first 3 seconds!'
+                },
+                US: {
+                    time: '12:00 PM to 3:00 PM EST and 6:00 PM to 9:00 PM EST',
+                    tips: 'US Algorithm Boost: Focus heavily on high-fidelity audio hook quality and high retention rates. Use trending TikTok commercial audios for Reels/Shorts!'
+                },
+                UK: {
+                    time: '5:00 PM to 8:00 PM GMT',
+                    tips: 'UK Algorithm Boost: Utilize high-contrast text overlays and conversational commentary tracks.'
+                },
+                IN: {
+                    time: '3:30 PM to 6:30 PM IST',
+                    tips: 'Subcontinent Regional Boost: Regional language keywords mixed with trending music are key. Post consistently during late afternoon commute hours.'
+                },
+                DE: {
+                    time: '4:00 PM to 7:00 PM CET',
+                    tips: 'EU Regional Boost: Use clean, high-contrast title typography. High compliance with local metadata standards.'
+                },
+                RU: {
+                    time: '5:00 PM to 9:00 PM MSK',
+                    tips: 'Localized CIS Boost: Maximize engagement via interactive comment polls in the pinned comment.'
+                },
+                MY: {
+                    time: '6:00 PM to 9:00 PM MYT',
+                    tips: 'Malaysia Viral Boost: Mix English and Malay keywords. Tap into trending local music hashtags for extra organic discoverability.'
+                },
+                SG: {
+                    time: '7:00 PM to 10:00 PM SGT',
+                    tips: 'Singapore Metropolitan Boost: High-density target timing when professionals and youth browse social media. High-relevancy localized English tags perform best.'
+                }
+            };
+            const guide = countryGuides[selectedCountry] || countryGuides['BD'];
             seoResult = {
-                title: `🔥 [VIRAL] ${displayTitle} - 4K UHD Optimized!`,
-                description: `This video is fully optimized for ${platform || 'Social Media'}. Watch now to discover the latest trending secrets! 🎬✨\n\n🔔 Leave a like, comment, and share to support our channel!\n\n#viral #trending #${platform || 'shorts'} #foryou #explore`,
-                tags: ['viral', 'trending', 'explore', platform || 'shorts', 'foryou'],
-                category: 'Entertainment / Creators',
-                tips: 'Post this between 5:00 PM and 8:30 PM local time. Keep the first 3 seconds extremely high tempo to hook viewers and increase watch time retention!'
+                title: `🔥 [VIRAL BOOST] ${displayTitle} - Full HD Optimized!`,
+                description: `Optimized for maximum viral organic reach in ${selectedCountry}. Watch now to discover why this is trending! 🎬✨\n\n🔔 Don't forget to like, follow and share for more localized updates!\n\n#viral #trending #${platform || 'shorts'} #${selectedCountry} #foryou`,
+                tags: ['viral', 'trending', platform || 'shorts', selectedCountry, 'foryou'],
+                category: 'Entertainment & Creators',
+                tips: `Local Optimal Posting Time: ${guide.time}. ${guide.tips}`
             };
         }
 

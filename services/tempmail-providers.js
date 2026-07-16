@@ -529,6 +529,9 @@ async function createAccount() {
     // Dynamic, Fair Round-Robin Free Providers List (Filtered to only stable and unblocked APIs)
     const FREE_PROVIDERS = [
         { name: 'mail.tm', fn: tryMailTm },
+        { name: '1secmail', fn: try1SecMail },
+        { name: 'mail.gw', fn: tryMailGw },
+        { name: 'dropmail', fn: tryDropMail },
         { name: 'guerrilla', fn: tryGuerrilla }
     ];
 

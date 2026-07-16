@@ -7347,6 +7347,7 @@ function viewPurchaseDetail(encoded) {
 
             const modal = document.createElement('div');
             modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:999999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px);padding:16px;';
+            const isFree = p.price === 0;
             modal.innerHTML = `
                 <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:20px;padding:24px;max-width:360px;width:100%;border:1px solid rgba(245,158,11,0.3);">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
@@ -7361,6 +7362,12 @@ function viewPurchaseDetail(encoded) {
                             <button onclick="histCopy('${f.val.replace(/'/g, "\\'")}',this)" style="background:none;border:none;color:#f59e0b;cursor:pointer;padding:4px;font-size:13px;flex-shrink:0;"><i class="fas fa-copy"></i></button>
                         </div>
                     </div>`).join('') : '<p style="color:#6b7280;text-align:center;padding:20px 0;">No details available</p>'}
+                    
+                    ${isFree ? `
+                    <button onclick="cleanFreePurchaseClaim('${p.itemId || ''}', '${p.itemType}', ${p.boughtAt})" style="width:100%; margin-top:12px; background:#ef4444; border:none; color:#fff; font-weight:700; font-size:13px; padding:10px; border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+                        <i class="fas fa-trash-alt"></i> Clean Claim History
+                    </button>
+                    ` : ''}
                 </div>`;
             document.body.appendChild(modal);
             modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
@@ -7370,6 +7377,35 @@ function viewPurchaseDetail(encoded) {
     }
 }
 window.viewPurchaseDetail = viewPurchaseDetail;
+
+async function cleanFreePurchaseClaim(itemId, category, boughtAt) {
+    if (!confirm('Are you sure you want to clean this claim history? This will remove it from your history and let you claim it again if needed.')) return;
+    try {
+        const res = await fetch('/api/shop/purchase/clean', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: userData.id, itemId, category, boughtAt })
+        });
+        const data = await res.json();
+        if (data.success) {
+            window.showToast?.('✅ History cleaned!', 'success');
+            const openModal = document.querySelector('div[style*="z-index: 999999"]');
+            if (openModal) openModal.remove();
+            
+            userData.purchasedAccounts = data.purchasedAccounts;
+            localStorage.setItem(`purchasedAccounts_${userData.id}`, JSON.stringify(data.purchasedAccounts));
+
+            loadMyPurchases();
+            loadRecentActivity();
+            renderShopItems();
+        } else {
+            alert('Failed to clean claim history.');
+        }
+    } catch (e) {
+        console.error('cleanFreePurchaseClaim error:', e);
+    }
+}
+window.cleanFreePurchaseClaim = cleanFreePurchaseClaim;
 
 // Switch between history tabs
 function switchHistTab(tab) {
@@ -7873,8 +7909,9 @@ function updateCountryDropdown(availableCountries) {
 
     select.innerHTML = '';
     let added = 0;
+    const isWildcard = !availableCountries || availableCountries.includes('*');
     window._fullCountryOptions.forEach(opt => {
-        if (availableCountries && availableCountries.includes(opt.value)) {
+        if (isWildcard || (availableCountries && availableCountries.includes(opt.value))) {
             const newOpt = document.createElement('option');
             newOpt.value = opt.value;
             newOpt.text = opt.text;
@@ -7986,71 +8023,139 @@ function updateActiveNumbersTick() {
 }
 
 function renderActiveNumbers() {
-    const container = document.getElementById('activeNumbersContainer');
-    if (!container) return;
+    const displayEl = document.getElementById('activeVirtualNumberDisplay');
+    const copyBtn = document.getElementById('copyActiveNumberBtn');
+    const quickViewEl = document.getElementById('virtualNumberOtpQuickView');
+    const inboxListEl = document.getElementById('virtualNumberInboxList');
 
-    container.innerHTML = activeVirtualNumbers.map(session => {
-        const isSuccess = session.status === 'success';
-        const isFailed = session.status === 'failed';
-        const statusColor = isSuccess ? '#22c55e' : (isFailed ? '#ef4444' : 'var(--text-sub)');
-        let statusText = isSuccess ? 'SUCCESS ✓' : (isFailed ? 'FAIL ✗ - 15 TC Refunded' : 'Waiting for OTP...');
+    if (!displayEl || !inboxListEl) return;
 
-        return `
-            <div data-session-id="${session.id}" class="active-number-card" style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:12px; margin-bottom:12px;">
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-                    <div style="display:flex; align-items:center; gap:10px; flex:1; overflow:hidden;">
-                        <div style="width:36px; height:36px; background:rgba(147,51,234,0.1); border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                            <i class="fas fa-phone" style="color:#9333ea; font-size:14px;"></i>
-                        </div>
-                        <div style="flex:1; overflow:hidden;">
-                            <div style="font-size:10px; color:var(--text-sub); font-weight:700; margin-bottom:2px; text-transform:uppercase; letter-spacing:0.5px;">${(session.platform || 'Telegram').toUpperCase()} NUMBER</div>
-                            <div style="font-size:15px; font-weight:800; color:var(--text-main); font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                ${session.number}
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <button onclick="copyNumByValue('${session.number}')" style="width:36px; height:36px; border-radius:10px; background:rgba(147,51,234,0.1); border:1px solid rgba(147,51,234,0.3); display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Copy Number">
-                            <i class="fas fa-copy" style="color:#9333ea; font-size:13px;"></i>
-                        </button>
-                        <button onclick="cancelNumberBySessionId('${session.id}')" style="width:36px; height:36px; border-radius:10px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Close">
-                            <i class="fas fa-times" style="color:#ef4444; font-size:13px;"></i>
-                        </button>
-                    </div>
+    if (activeVirtualNumbers.length === 0) {
+        displayEl.textContent = 'No Active Number';
+        if (copyBtn) copyBtn.style.opacity = '0.5';
+        if (quickViewEl) quickViewEl.innerHTML = '';
+        inboxListEl.innerHTML = `
+            <div style="text-align:center; padding:45px 20px; color:var(--text-sub);">
+                <div style="width:50px; height:50px; background:rgba(147,51,234,0.08); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <i class="fas fa-sms" style="font-size:20px; color:#9333ea;"></i>
                 </div>
-                <div style="display:flex; flex-direction:column; align-items:center; gap:6px; background:rgba(0,0,0,0.2); border-radius:10px; padding:10px;">
-                    <div style="font-size:10px; color:var(--text-sub); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">SMS / OTP</div>
-                    <div class="otp-display" style="text-align:center; font-size:20px; letter-spacing:2px; font-weight:800; color:${statusColor}; font-family:monospace; ${isSuccess ? 'cursor:pointer' : ''}" ${isSuccess ? `onclick="copyNumOtp('${session.otp}')"` : ''}>
-                        ${isSuccess ? session.otp : '--:--'}
+                <div style="font-size:13px; font-weight:600; margin-bottom:4px; color:var(--text-main);">No Active Number</div>
+                <div style="font-size:11px; opacity:0.7;">Select a country and tap NEW NUMBER above to start.</div>
+            </div>
+        `;
+        return;
+    }
+
+    const session = activeVirtualNumbers[0];
+    const isSuccess = session.status === 'success';
+    const isFailed = session.status === 'failed';
+
+    // Get country flag
+    const selectEl = document.getElementById('numCountrySelect');
+    let flag = '📱';
+    if (selectEl) {
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        if (selectedOpt) {
+            const match = selectedOpt.text.match(/^([\uD83C-\uDBFF\uDC00-\uDFFF]+)/);
+            if (match) flag = match[1];
+        }
+    }
+
+    displayEl.innerHTML = `<span style="margin-right:6px;">${flag}</span>${session.number}`;
+    if (copyBtn) copyBtn.style.opacity = '1';
+
+    // OTP Quick View / Countdown
+    if (quickViewEl) {
+        if (isSuccess) {
+            quickViewEl.innerHTML = `
+                <div style="padding: 10px 16px; width:100%; display: flex; align-items: center; justify-content: space-between; background: rgba(34, 197, 94, 0.15); border: 2px solid #22c55e; border-radius: 12px; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:10px; color:#22c55e; font-weight:900; text-transform:uppercase; background:rgba(34,197,94,0.1); padding:2px 6px; border-radius:4px;">CODE</span>
+                        <span class="oc-code" style="font-size: 22px; font-weight: 900; color: #fff; letter-spacing: 2px; font-family: monospace;">${session.otp}</span>
                     </div>
-                    <div style="text-align:center; font-size:10px; font-weight:700; margin-top:2px;">
-                        <span class="status-text" style="color:${statusColor};">${statusText}</span>
+                    <button onclick="copyActiveVirtualNumberOtp('${session.otp}')" 
+                        style="width:36px; height:36px; border-radius:10px; background:#22c55e; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);">
+                        <i class="fas fa-copy" style="color:#000; font-size:14px;"></i>
+                    </button>
+                </div>
+            `;
+        } else if (isFailed) {
+            quickViewEl.innerHTML = `
+                <div style="font-size:12px; font-weight:700; color:#ef4444; background:rgba(239,68,68,0.1); padding:6px 14px; border-radius:20px;">
+                    <i class="fas fa-times-circle"></i> Expired & Tokens Refunded
+                </div>
+            `;
+        } else {
+            quickViewEl.innerHTML = `
+                <div style="font-size:12px; font-weight:700; color:#f59e0b; background:rgba(245,158,11,0.1); padding:6px 14px; border-radius:20px; display:flex; align-items:center; gap:6px;">
+                    <i class="fas fa-clock fa-spin"></i> Waiting for SMS... Expires in: <span id="numActiveCountdown">10:00</span>
+                </div>
+            `;
+        }
+    }
+
+    // Render SMS Inbox list (similar to Temp Mail Inbox list)
+    if (isSuccess) {
+        inboxListEl.innerHTML = `
+            <div class="inbox-item" onclick="openVirtualNumberSmsModal('SMS Gateway', 'Your verification code is: ${session.otp}', '${session.otp}')" style="cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-left: 3px solid #22c55e; transition: background 0.2s; border-bottom: 1px solid var(--border-color);">
+                <div style="background:rgba(34,197,94,0.1); width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-right:12px; flex-shrink:0;">
+                    <i class="fas fa-sms" style="color:#22c55e; font-size:16px;"></i>
+                </div>
+                <div style="flex:1; min-width:0; padding-right:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                        <div style="font-weight:800; color:#fff; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Verification Gateway</div>
+                        <div style="font-size:10px; opacity:0.6; flex-shrink:0;">just now</div>
                     </div>
+                    <div style="font-size:11px; color:var(--text-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Your verification OTP code is: <strong style="color:#22c55e; font-family:monospace; font-size:12px;">${session.otp}</strong></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button onclick="event.stopPropagation(); copyActiveVirtualNumberOtp('${session.otp}')" 
+                        style="width:30px; height:30px; border-radius:50%; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; color:var(--text-sub);">
+                        <i class="fas fa-copy" style="font-size:11px;"></i>
+                    </button>
+                    <i class="fas fa-chevron-right" style="font-size:10px; color:var(--text-sub); opacity:0.5;"></i>
                 </div>
             </div>
         `;
-    }).join('');
+    } else if (isFailed) {
+        inboxListEl.innerHTML = `
+            <div style="text-align:center; padding:45px 20px; color:var(--text-sub);">
+                <div style="width:40px; height:40px; background:rgba(239,68,68,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <i class="fas fa-exclamation-triangle" style="color:#ef4444; font-size:16px;"></i>
+                </div>
+                <div style="font-size:13px; font-weight:700; margin-bottom:4px; color:#ef4444;">Session Expired</div>
+                <div style="font-size:11px; opacity:0.7;">This number expired without receiving any SMS. 15 TC was refunded.</div>
+            </div>
+        `;
+    } else {
+        inboxListEl.innerHTML = `
+            <div style="text-align:center; padding:45px 20px; color:var(--text-sub);">
+                <div style="width:40px; height:40px; border-radius:50%; background:rgba(147,51,234,0.15); display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                    <div style="width:12px; height:12px; background:#9333ea; border-radius:50%; animation: pulse 1.5s infinite;"></div>
+                </div>
+                <div style="font-size:13px; font-weight:700; margin-bottom:4px; color:var(--text-main);">Waiting for SMS...</div>
+                <div style="font-size:11px; opacity:0.7;">Please send your verification code to the number above. It will appear here automatically.</div>
+            </div>
+        `;
+    }
 }
 
 function updateActiveNumbersUI() {
     const now = Date.now();
-    activeVirtualNumbers.forEach(session => {
-        const card = document.querySelector(`.active-number-card[data-session-id="${session.id}"]`);
-        if (!card) return;
-
+    
+    // Update the unified countdown if present
+    const countdownEl = document.getElementById('numActiveCountdown');
+    if (countdownEl && activeVirtualNumbers.length > 0) {
+        const session = activeVirtualNumbers[0];
         if (session.status === 'pending') {
-            const otpDisplay = card.querySelector('.otp-display');
             const remaining = Math.max(0, Math.floor((session.expiry - now) / 1000));
             const mins = Math.floor(remaining / 60);
             const secs = remaining % 60;
             const timerStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-
-            if (otpDisplay) {
-                otpDisplay.textContent = timerStr;
-                otpDisplay.style.color = (remaining < 30) ? '#ef4444' : '#9333ea';
-            }
+            countdownEl.textContent = timerStr;
+            countdownEl.style.color = (remaining < 30) ? '#ef4444' : '#f59e0b';
         }
-    });
+    }
 }
 
 function copyNumByValue(val) {
@@ -8096,6 +8201,85 @@ function cancelNumberBySessionId(sessionId) {
     }
 }
 
+function copyActiveVirtualNumber() {
+    if (activeVirtualNumbers.length === 0) return;
+    copyNumByValue(activeVirtualNumbers[0].number);
+    window.showToast?.('✅ Number copied to clipboard!', 'success');
+}
+
+function copyActiveVirtualNumberOtp(otp) {
+    if (!otp) return;
+    copyNumByValue(otp);
+    window.showToast?.('✅ OTP copied to clipboard!', 'success');
+}
+
+function cancelActiveVirtualNumber() {
+    if (activeVirtualNumbers.length === 0) {
+        window.showToast?.('❌ No active number to cancel/replace.');
+        return;
+    }
+    cancelNumberBySessionId(activeVirtualNumbers[0].id);
+}
+
+function refreshActiveVirtualNumberSMS() {
+    if (activeVirtualNumbers.length === 0) {
+        window.showToast?.('❌ No active number to refresh.');
+        return;
+    }
+    const session = activeVirtualNumbers[0];
+    const refreshIcon = document.getElementById('numRefreshIcon');
+    if (refreshIcon) refreshIcon.classList.add('fa-spin');
+
+    fetch(`/api/number/otp?sessionId=${session.sessionId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+            if (data.success && data.otp && data.otp !== 'Waiting...') {
+                session.status = 'success';
+                session.otp = data.otp;
+                updateNumHistoryStatus(session.number, 'success');
+                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                window.showToast?.(`✅ OTP received: ${data.otp}`, 'success');
+                saveActiveNumbers();
+                renderActiveNumbers();
+            } else {
+                window.showToast?.('⏳ Waiting for SMS... Send code to the number above.');
+            }
+        })
+        .catch(err => {
+            if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+            window.showToast?.('❌ Network error checking SMS.');
+            console.error(err);
+        });
+}
+
+function openVirtualNumberSmsModal(sender, content, otp) {
+    document.getElementById('vnModalSender').textContent = sender;
+    document.getElementById('vnModalContent').textContent = content;
+    document.getElementById('vnModalOtp').textContent = otp || '------';
+    
+    const modal = document.getElementById('virtualNumberSmsModal');
+    const sheet = document.getElementById('virtualNumberSmsSheet');
+    if (modal && sheet) {
+        modal.style.display = 'flex';
+        setTimeout(() => {
+            sheet.style.transform = 'translateY(0)';
+        }, 20);
+        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+    }
+}
+
+function closeVirtualNumberSmsModal() {
+    const modal = document.getElementById('virtualNumberSmsModal');
+    const sheet = document.getElementById('virtualNumberSmsSheet');
+    if (modal && sheet) {
+        sheet.style.transform = 'translateY(100%)';
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 300);
+    }
+}
+
 function generateVirtualNumber() {
     if (checkZeroBalanceAdTrigger()) return;
     const cost = 15;
@@ -8105,45 +8289,46 @@ function generateVirtualNumber() {
     userData.tokens -= cost;
     updateNumBalance();
 
-    const btn = document.getElementById('numGenerateBtn');
-    if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...'; btn.disabled = true; }
+    const btn = document.getElementById('numNewBtn') || document.getElementById('numGenerateBtn');
+    if (btn) { 
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...'; 
+        btn.disabled = true; 
+    }
 
-    const platformName = typeof selectedNumPlatform !== 'undefined' ? selectedNumPlatform : 'Telegram';
     const countryCode = document.getElementById('numCountrySelect').value;
 
     fetch('/api/number/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: userData.id, platform: platformName, countryCode: countryCode, cost: cost })
+        body: JSON.stringify({ userId: userData.id, platform: 'Personal', countryCode: countryCode, cost: cost })
     })
         .then(res => res.json())
         .then(data => {
-            if (btn) { btn.innerHTML = '<i class="fas fa-phone-alt"></i> GET VIRTUAL NUMBER'; btn.disabled = false; }
+            if (btn) { 
+                btn.innerHTML = btn.id === 'numNewBtn' ? '<i class="fas fa-plus"></i> NEW NUMBER' : '<i class="fas fa-phone-alt"></i> GET VIRTUAL NUMBER'; 
+                btn.disabled = false; 
+            }
 
             if (data.success) {
                 const now = Date.now();
-
-                if (data.notifyLimit) {
-                    window.showToast?.('You can generate a maximum of 7 numbers at a time. Taking a new number will close the oldest one.');
-                }
 
                 const newSession = {
                     id: now,
                     sessionId: data.sessionId,
                     number: data.number,
-                    platform: platformName,
+                    platform: 'Personal',
                     status: 'pending',
                     expiry: now + 600000,
                     otp: null
                 };
 
+                // Remove oldest if limit reached
                 if (activeVirtualNumbers.length >= 7) {
                     const oldest = activeVirtualNumbers.pop();
                     if (oldest && oldest.status === 'pending') {
                         userData.tokens += numSessionCost;
                         updateNumBalance();
 
-                        // Notify server about auto-cancellation
                         fetch('/api/number/cancel', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -8172,7 +8357,10 @@ function generateVirtualNumber() {
             }
         })
         .catch(err => {
-            if (btn) { btn.innerHTML = '<i class="fas fa-phone-alt"></i> GET VIRTUAL NUMBER'; btn.disabled = false; }
+            if (btn) { 
+                btn.innerHTML = btn.id === 'numNewBtn' ? '<i class="fas fa-plus"></i> NEW NUMBER' : '<i class="fas fa-phone-alt"></i> GET VIRTUAL NUMBER'; 
+                btn.disabled = false; 
+            }
             userData.tokens += cost;
             updateNumBalance();
             window.showToast?.('Network error. Tokens refunded.');
@@ -10428,6 +10616,12 @@ window.cancelNumberBySessionId = cancelNumberBySessionId;
 window.cancelNumber = cancelNumberBySessionId;
 window.openService = openService;
 window.copyText = copyText;
+window.copyActiveVirtualNumber = copyActiveVirtualNumber;
+window.copyActiveVirtualNumberOtp = copyActiveVirtualNumberOtp;
+window.cancelActiveVirtualNumber = cancelActiveVirtualNumber;
+window.refreshActiveVirtualNumberSMS = refreshActiveVirtualNumberSMS;
+window.closeVirtualNumberSmsModal = closeVirtualNumberSmsModal;
+window.openVirtualNumberSmsModal = openVirtualNumberSmsModal;
 window.copyTextById = copyTextById;
 window.copySimpleText = copySimpleText;
 window.copyRichText = copyRichText;
@@ -11194,6 +11388,20 @@ window.downloadVideo = async function downloadVideo() {
                             </div>
                         </div>
 
+                        <div>
+                            <label style="display:block;font-size:11px;font-weight:700;color:var(--text-sub);margin-bottom:6px;text-transform:uppercase;">Select Target Country (Timezone & Algorithm Booster)</label>
+                            <select id="seoCountrySelect" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#fff;border-radius:10px;padding:10px;font-size:12px;font-weight:700;outline:none;cursor:pointer;margin-bottom:12px;">
+                                <option value="BD" selected>🇧🇩 Bangladesh (BST - Optimal timezone for local viral boost)</option>
+                                <option value="US">🇺🇸 United States (EST/PST - High CPM Global algorithm reach)</option>
+                                <option value="UK">🇬🇧 United Kingdom (GMT - Local trending hashtags)</option>
+                                <option value="IN">🇮🇳 India (IST - Regional Subcontinent viral boost)</option>
+                                <option value="DE">🇩🇪 Germany (CET - EU centralized metadata optimizations)</option>
+                                <option value="RU">🇷🇺 Russia (MSK - Regional audience timings)</option>
+                                <option value="MY">🇲🇾 Malaysia (SGT - Southeast Asian viral trends)</option>
+                                <option value="SG">🇸🇬 Singapore (SGT - High metropolitan density timing)</option>
+                            </select>
+                        </div>
+
                         <button id="runSeoBtn" onclick="window.runAiSeoOptimization('${escapedUrl}', '${escapedTitle}', '${escapedDesc}')" style="width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:12px;padding:12px;font-size:13px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:0.2s;box-shadow:0 4px 12px rgba(245,158,11,0.2);">
                             <i class="fas fa-magic"></i> Generate AI SEO (Cost: 10 TC)
                         </button>
@@ -11316,6 +11524,9 @@ window.runAiSeoOptimization = async function (url, title, description) {
     if (container) container.style.display = 'none';
 
     try {
+        const countryEl = document.getElementById('seoCountrySelect');
+        const selectedCountry = countryEl ? countryEl.value : 'BD';
+
         const res = await fetch('/api/video-downloader/seo', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -11324,7 +11535,8 @@ window.runAiSeoOptimization = async function (url, title, description) {
                 url: url,
                 title: title,
                 description: description,
-                platform: selectedSeoPlatform
+                platform: selectedSeoPlatform,
+                country: selectedCountry
             })
         });
         const data = await res.json();

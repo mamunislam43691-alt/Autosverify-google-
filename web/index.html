@@ -3391,91 +3391,115 @@
                         </div>
                     </div>
 
-                    <!-- SERVICE SELECTOR (S) - SIMPLE ROW STYLE -->
-                    <div style="margin-bottom:20px;">
-                        <div
-                            style="font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">
-                            <i class="fas fa-briefcase" style="margin-right:6px;"></i>Select Service
-                        </div>
-
-                        <!-- Simple Service Box -->
-                        <div id="numServiceBox" onclick="toggleServiceDropdown()"
-                            style="background:var(--bg-card); border:1px solid rgba(147,51,234,0.35); border-radius:16px; height:56px; display:flex; align-items:center; justify-content:space-between; padding:0 16px; cursor:pointer;">
-                            <div style="display:flex; align-items:center; gap:12px;">
-                                <div id="selectedServiceIcon"
-                                    style="width:36px; height:36px; background:rgba(147,51,234,0.15); border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                                    <i class="fab fa-telegram" style="color:#9333ea; font-size:18px;"></i>
+                    <!-- Active Virtual Number State (styled exactly like the Email page) -->
+                    <div id="virtualNumberActiveBlock" style="display:block; margin-bottom:20px;">
+                        <!-- Number Display -->
+                        <div style="text-align:center; margin-bottom:16px;">
+                            <div style="font-size:13px; font-weight:700; color:var(--text-main); margin-bottom:12px;">
+                                Your Temporary Virtual Number</div>
+                            <div
+                                style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:50px; padding:12px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                                <div style="flex:1; overflow:hidden;">
+                                    <div id="activeVirtualNumberDisplay"
+                                        style="font-size:16px; font-weight:800; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:monospace; tracking:0.5px;">
+                                        No Active Number
+                                    </div>
                                 </div>
-                                <div id="selectedServiceName"
-                                    style="font-size:16px; font-weight:700; color:var(--text-main);">Telegram</div>
-                            </div>
-                            <i class="fas fa-chevron-down" id="serviceDropdownIcon"
-                                style="color:#9333ea; font-size:14px; transition:transform 0.3s;"></i>
-                        </div>
-
-                        <!-- Service Options (Dropdown) -->
-                        <div id="serviceOptions"
-                            style="display:none; background:var(--bg-card); border:1px solid rgba(147,51,234,0.25); border-radius:12px; margin-top:8px; padding:12px;">
-                            <div id="numPlatformList"
-                                style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
-                                <!-- Platforms will be loaded dynamically -->
+                                <div style="display:flex; gap:8px;">
+                                    <button id="copyActiveNumberBtn"
+                                        style="width:36px; height:36px; border-radius:50%; background:#9333ea; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:0.5; transition: opacity 0.2s;"
+                                        onclick="copyActiveVirtualNumber()">
+                                        <i class="fas fa-copy" style="color:#fff; font-size:14px;"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <script>
-                        // Load platforms when page becomes visible
-                        document.addEventListener('DOMContentLoaded', function () {
-                            const observer = new MutationObserver(function (mutations) {
-                                mutations.forEach(function (mutation) {
-                                    const page = document.getElementById('numberServicePage');
-                                    if (page && page.classList.contains('active')) {
-                                        if (typeof loadNumPlatforms === 'function') {
-                                            loadNumPlatforms();
-                                        }
-                                    }
-                                });
-                            });
+                        <!-- Description -->
+                        <div style="text-align:center; margin-bottom:20px; padding:0 10px;">
+                            <p style="font-size:12px; color:var(--text-sub); line-height:1.6;">Use this high-quality personal number for your verification SMS. It will automatically detect any incoming code.</p>
+                        </div>
 
-                            const page = document.getElementById('numberServicePage');
-                            if (page) {
-                                observer.observe(page, { attributes: true, attributeFilter: ['class'] });
-                            }
+                        <!-- Action Buttons (NEW, REPLACE, REFRESH) -->
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:20px;">
+                            <button class="mail-action-btn" id="numNewBtn" onclick="generateVirtualNumber()" style="background:#9333ea; border:none; color:#fff;">
+                                <i class="fas fa-plus"></i> NEW NUMBER
+                            </button>
+                            <button class="mail-action-btn renew" id="numCancelBtn" onclick="cancelActiveVirtualNumber()" style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); color:#ef4444;">
+                                <i class="fas fa-undo"></i> REPLACE
+                            </button>
+                            <button class="mail-action-btn refresh" id="numRefreshBtn" onclick="refreshActiveVirtualNumberSMS()" style="background:rgba(255,255,255,0.05); border:1px solid var(--border-color); color:var(--text-main);">
+                                <i class="fas fa-sync" id="numRefreshIcon"></i> REFRESH
+                            </button>
+                        </div>
 
-                            // Also try to load immediately if page is already active
-                            setTimeout(function () {
-                                const page = document.getElementById('numberServicePage');
-                                if (page && page.style.display !== 'none' && typeof loadNumPlatforms === 'function') {
-                                    loadNumPlatforms();
-                                }
-                            }, 100);
-                        });
-                    </script>
+                        <!-- OTP Quick View / Countdown -->
+                        <div id="virtualNumberOtpQuickView" style="display:flex; justify-content:center; padding:5px 0; margin-bottom:15px;">
+                            <!-- Shows countdown timer or OTP chip -->
+                        </div>
 
-                    <!-- Generate Button -->
-                    <button id="numGenerateBtn" onclick="generateVirtualNumber()"
-                        style="width:100%; height:52px; background:linear-gradient(135deg,#7c3aed,#9333ea); border:none; border-radius:16px; color:#fff; font-size:14px; font-weight:800; letter-spacing:0.5px; display:flex; align-items:center; justify-content:center; gap:10px; cursor:pointer; box-shadow:0 8px 24px rgba(147,51,234,0.35); margin-bottom:20px; transition:opacity 0.2s;"
-                        onmousedown="this.style.opacity='0.85'" onmouseup="this.style.opacity='1'">
-                        <i class="fas fa-phone-alt"></i> GET VIRTUAL NUMBER
-                    </button>
-
-                    <!-- NUMBER + OTP - MEDIUM DESIGN -->
-                    <div id="activeNumbersContainer"
-                        style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;"></div>
-
-                    <!-- History -->
-                    <div>
-                        <div
-                            style="font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">
-                            History</div>
-                        <div id="numHistoryList">
-                            <div style="text-align:center; padding:30px 20px; color:var(--text-sub); font-size:13px;">
-                                <i class="fas fa-history"
-                                    style="font-size:24px; opacity:0.3; display:block; margin-bottom:10px;"></i>
-                                No numbers generated yet
+                        <!-- SMS Inbox Table (exactly like Temp Mail Inbox) -->
+                        <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; overflow:hidden; margin-bottom:25px;">
+                            <!-- Table Header -->
+                            <div
+                                style="display:grid; grid-template-columns:1.2fr 1.8fr 70px; background:#1f2937; padding:12px 16px; font-size:11px; font-weight:700; color:#fff; text-transform:uppercase; letter-spacing:0.5px;">
+                                <div>SENDER</div>
+                                <div>SMS CONTENT / OTP</div>
+                                <div style="text-align:center;">STATUS</div>
+                            </div>
+                            <!-- Inbox List -->
+                            <div id="virtualNumberInboxList" style="min-height:180px;">
+                                <div style="text-align:center; padding:45px 20px; color:var(--text-sub);">
+                                    <div
+                                        style="width:50px; height:50px; background:rgba(147,51,234,0.08); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 12px;">
+                                        <i class="fas fa-sms" style="font-size:20px; color:#9333ea;"></i>
+                                    </div>
+                                    <div style="font-size:13px; font-weight:600; margin-bottom:4px; color:var(--text-main);">No Active Number</div>
+                                    <div style="font-size:11px; opacity:0.7;">Select a country and tap NEW NUMBER above to start.</div>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    <!-- VIRTUAL NUMBER SMS MODAL (Custom Bottom Sheet) -->
+                    <div id="virtualNumberSmsModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; z-index:2147483647; align-items:flex-end; justify-content:center;" onclick="if(event.target===this) closeVirtualNumberSmsModal()">
+                        <div style="position:absolute; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px);"></div>
+                        <div id="virtualNumberSmsSheet" style="position:relative; z-index:1; width:100%; max-width:430px; background:linear-gradient(180deg, #18141c 0%, #0d0a10 100%); border-top-left-radius:24px; border-top-right-radius:24px; padding:24px; border:1px solid rgba(147,51,234,0.2); border-bottom:none; transition:transform 0.3s ease-out; transform:translateY(100%);">
+                            <div style="width:50px; height:5px; background:rgba(255,255,255,0.2); border-radius:10px; margin:0 auto 20px;"></div>
+                            
+                            <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+                                <div style="width:40px; height:40px; background:rgba(34,197,94,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center;">
+                                    <i class="fas fa-sms" style="color:#22c55e; font-size:18px;"></i>
+                                </div>
+                                <div>
+                                    <div style="font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase;">SMS Sender</div>
+                                    <div style="font-size:16px; font-weight:800; color:#fff;" id="vnModalSender">Verification Service</div>
+                                </div>
+                            </div>
+
+                            <div style="background:rgba(0,0,0,0.2); border:1px solid var(--border-color); border-radius:14px; padding:16px; margin-bottom:20px;">
+                                <div style="font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase; margin-bottom:8px;">Message Content</div>
+                                <div style="font-size:14px; color:#fff; line-height:1.6;" id="vnModalContent">...</div>
+                            </div>
+
+                            <div style="background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.2); border-radius:14px; padding:16px; margin-bottom:24px; display:flex; align-items:center; justify-content:space-between;">
+                                <div>
+                                    <div style="font-size:10px; font-weight:700; color:#22c55e; text-transform:uppercase; margin-bottom:4px;">Extracted OTP Code</div>
+                                    <div style="font-size:22px; font-weight:900; color:#fff; font-family:monospace; letter-spacing:2px;" id="vnModalOtp">------</div>
+                                </div>
+                                <button id="vnModalCopyBtn" onclick="copyActiveVirtualNumberOtp(document.getElementById('vnModalOtp').textContent)" 
+                                    style="width:44px; height:44px; border-radius:12px; background:#22c55e; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 10px rgba(34,197,94,0.3);">
+                                    <i class="fas fa-copy" style="color:#000; font-size:16px;"></i>
+                                </button>
+                            </div>
+
+                            <button onclick="closeVirtualNumberSmsModal()" 
+                                style="width:100%; padding:14px; border-radius:14px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#fff; font-weight:700; font-size:14px; cursor:pointer;">Close</button>
+                        </div>
+                    </div>
+
+                    <!-- History (Removed as requested) -->
+                    <div id="numHistoryList" style="display:none;"></div>
 
                 </div>
             </div>

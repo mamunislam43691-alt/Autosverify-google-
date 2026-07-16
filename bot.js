@@ -395,6 +395,83 @@ bot.on('message', (msg) => {
     console.log(`[DEBUG] RAW MESSAGE RECEIVED from ${msg.from?.id}: ${msg.text}`);
 });
 
+// ==================== CHANNEL ACCOUNT BLOCKER (LIVE STREAM PROTECTION) ====================
+// Automatically identify and block/ban channels used to join or post in groups instead of real profiles
+bot.on('message', async (msg) => {
+    try {
+        if (!msg.chat || !['group', 'supergroup'].includes(msg.chat.type)) return;
+
+        // Get group management settings
+        const settings = db.data?.adminSettings?.groupManagement || {};
+        if (settings.blockChannelAccounts !== true) return;
+
+        // Check if the message is sent on behalf of a channel (sender_chat type channel)
+        if (msg.sender_chat && msg.sender_chat.type === 'channel') {
+            const chatId = msg.chat.id;
+            const channelId = msg.sender_chat.id;
+            const channelTitle = msg.sender_chat.title || 'Channel';
+            const channelUsername = msg.sender_chat.username ? `@${msg.sender_chat.username}` : '';
+
+            // Guard: If this is the configured discussion channel of this group, DO NOT ban it!
+            const apiKeys = db.data?.apiKeys || {};
+            const requiredChannelId = apiKeys.requiredChannelId || config.REQUIRED_CHANNEL_ID || '';
+            const requiredChannel = apiKeys.requiredChannel || db.data?.settings?.requiredChannel || config.REQUIRED_CHANNEL || '';
+            
+            const isRequiredChannel = (
+                String(channelId) === String(requiredChannelId) ||
+                (channelUsername && channelUsername.toLowerCase().replace('@', '') === requiredChannel.toLowerCase().replace('@', ''))
+            );
+
+            if (isRequiredChannel) {
+                console.log(`[CHANNEL_BLOCK] Skipping linked required channel: ${channelTitle} (${channelId})`);
+                return;
+            }
+
+            console.log(`[CHANNEL_BLOCK] Channel account detected! Title: ${channelTitle}, ID: ${channelId}, Chat: ${msg.chat.title} (${chatId})`);
+
+            // 1. Delete the triggering message
+            await bot.deleteMessage(chatId, msg.message_id).catch(e => {
+                console.warn(`[CHANNEL_BLOCK] Failed to delete message: ${e.message}`);
+            });
+
+            // 2. Ban the sender chat (the channel itself) from the group
+            let banned = false;
+            try {
+                if (typeof bot.banChatSenderChat === 'function') {
+                    await bot.banChatSenderChat(chatId, channelId);
+                    banned = true;
+                    console.log(`[CHANNEL_BLOCK] Banned channel via standard banChatSenderChat`);
+                }
+            } catch (err) {
+                console.warn(`[CHANNEL_BLOCK] standard banChatSenderChat failed: ${err.message}, trying direct request...`);
+            }
+
+            if (!banned) {
+                try {
+                    await bot._request('banChatSenderChat', { chat_id: chatId, sender_chat_id: channelId });
+                    banned = true;
+                    console.log(`[CHANNEL_BLOCK] Banned channel via direct API request`);
+                } catch (err) {
+                    console.error(`[CHANNEL_BLOCK] Banned channel request failed: ${err.message}`);
+                }
+            }
+
+            // 3. Send warning notification in the group (and auto-delete after 15 seconds to keep chat clean)
+            const warningMsg = await bot.sendMessage(chatId, `🚫 **চ্যানেল অ্যাকাউন্ট ব্লক করা হয়েছে!**\n\nগ্রুপে চ্যানেল আইডি দিয়ে জয়েন বা পোস্ট করা নিষেধ। লাইভ স্ট্রিম ও গ্রুপ সুরক্ষিত রাখতে **${channelTitle} ${channelUsername ? '(' + channelUsername + ')' : ''}** চ্যানেলটিকে ব্যান করা হয়েছে। অনুগ্রহ করে আপনার আসল পার্সোনাল আইডি দিয়ে জয়েন করুন।`, {
+                parse_mode: 'Markdown'
+            }).catch(() => null);
+
+            if (warningMsg) {
+                setTimeout(() => {
+                    bot.deleteMessage(chatId, warningMsg.message_id).catch(() => {});
+                }, 15000); // Delete warning after 15 seconds
+            }
+        }
+    } catch (e) {
+        console.error('[CHANNEL_BLOCK] Handler Error:', e);
+    }
+});
+
 // Global Error Handlers - silent
 process.on('unhandledRejection', (e) => { console.error('unhandledRejection:', e); });
 process.on('uncaughtException', (e) => { console.error('uncaughtException:', e); });
