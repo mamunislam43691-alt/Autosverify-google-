@@ -395,11 +395,97 @@ bot.on('message', (msg) => {
     console.log(`[DEBUG] RAW MESSAGE RECEIVED from ${msg.from?.id}: ${msg.text}`);
 });
 
+// ==================== LIVESTREAM AUTO-JOIN ASSISTANT & AUTO-REACTION ====================
+const activeLiveStreamPins = new Map(); // chatId -> messageId
+
+async function handleLiveStreamEvent(chatId, eventType, msg) {
+    try {
+        const settings = db.data?.adminSettings?.groupManagement || {};
+        if (settings.autoJoinLiveStream !== true) return;
+
+        if (eventType === 'started') {
+            console.log(`[LIVESTREAM] Auto-join triggered for chat ${chatId}`);
+            const assistantMsgText = `🎙️ **Bot Assistant has joined the live stream!**\n\n🛡️ **Active Protection:** Enabled\n🚫 **Channel Accounts:** Blocked immediately\n\nI am actively monitoring the stream to block, ban, and remove any channel accounts or spammers attempting to participate or spam.`;
+            
+            const sentMsg = await bot.sendMessage(chatId, assistantMsgText, { parse_mode: 'Markdown' });
+            if (sentMsg && sentMsg.message_id) {
+                activeLiveStreamPins.set(chatId, sentMsg.message_id);
+                await bot.pinChatMessage(chatId, sentMsg.message_id).catch(err => {
+                    console.warn(`[LIVESTREAM] Failed to pin assistant message in ${chatId}: ${err.message}`);
+                });
+            }
+        } else if (eventType === 'ended') {
+            console.log(`[LIVESTREAM] Auto-leave triggered for chat ${chatId}`);
+            const pinnedId = activeLiveStreamPins.get(chatId);
+            if (pinnedId) {
+                await bot.unpinChatMessage(chatId, { message_id: pinnedId }).catch(err => {
+                    bot.unpinChatMessage(chatId).catch(() => {});
+                });
+                activeLiveStreamPins.delete(chatId);
+                
+                await bot.sendMessage(chatId, `🎙️ **Live stream has ended.** Bot Assistant has left the stream.`, { parse_mode: 'Markdown' });
+            }
+        }
+    } catch (err) {
+        console.error(`[LIVESTREAM] Error handling live stream event:`, err);
+    }
+}
+
+async function handleAutoReaction(msg) {
+    try {
+        if (!msg.chat || !msg.message_id) return;
+        const settings = db.data?.adminSettings?.groupManagement || {};
+        if (settings.autoChannelReaction !== true) return;
+
+        // Choose a random emoji reaction
+        const emojis = ['👍', '❤️', '🔥', '🎉', '🤩', '👏', '⚡'];
+        const chosenEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+
+        console.log(`[AUTO_REACTION] Attempting reaction ${chosenEmoji} on message ${msg.message_id} in chat ${msg.chat.id}`);
+
+        await bot._request('setMessageReaction', {
+            chat_id: msg.chat.id,
+            message_id: msg.message_id,
+            reaction: [{ type: 'emoji', emoji: chosenEmoji }]
+        }).catch(err => {
+            console.warn(`[AUTO_REACTION] Failed to set reaction on message ${msg.message_id}: ${err.message}`);
+        });
+    } catch (err) {
+        console.error(`[AUTO_REACTION] Error in reaction handler:`, err);
+    }
+}
+
+// Detect live stream start/end events in messages
+bot.on('message', async (msg) => {
+    if (!msg.chat) return;
+    if (msg.video_chat_started || msg.voice_chat_started) {
+        await handleLiveStreamEvent(msg.chat.id, 'started', msg);
+    } else if (msg.video_chat_ended || msg.voice_chat_ended) {
+        await handleLiveStreamEvent(msg.chat.id, 'ended', msg);
+    }
+});
+
+// Detect live stream start/end events and reactions in channel posts
+bot.on('channel_post', async (msg) => {
+    if (!msg.chat) return;
+    
+    // Check if live stream event
+    if (msg.video_chat_started || msg.voice_chat_started) {
+        await handleLiveStreamEvent(msg.chat.id, 'started', msg);
+    } else if (msg.video_chat_ended || msg.voice_chat_ended) {
+        await handleLiveStreamEvent(msg.chat.id, 'ended', msg);
+    } else {
+        // Trigger auto reaction for regular channel posts
+        await handleAutoReaction(msg);
+    }
+});
+
 // ==================== CHANNEL ACCOUNT BLOCKER (LIVE STREAM PROTECTION) ====================
-// Automatically identify and block/ban channels used to join or post in groups instead of real profiles
+// Automatically identify and block/ban channels used to join or post in groups/channels instead of real profiles
 bot.on('message', async (msg) => {
     try {
-        if (!msg.chat || !['group', 'supergroup'].includes(msg.chat.type)) return;
+        if (!msg.chat) return;
+        if (!['group', 'supergroup', 'channel'].includes(msg.chat.type)) return;
 
         // Get group management settings
         const settings = db.data?.adminSettings?.groupManagement || {};
@@ -454,17 +540,6 @@ bot.on('message', async (msg) => {
                 } catch (err) {
                     console.error(`[CHANNEL_BLOCK] Banned channel request failed: ${err.message}`);
                 }
-            }
-
-            // 3. Send warning notification in the group (and auto-delete after 15 seconds to keep chat clean)
-            const warningMsg = await bot.sendMessage(chatId, `🚫 **চ্যানেল অ্যাকাউন্ট ব্লক করা হয়েছে!**\n\nগ্রুপে চ্যানেল আইডি দিয়ে জয়েন বা পোস্ট করা নিষেধ। লাইভ স্ট্রিম ও গ্রুপ সুরক্ষিত রাখতে **${channelTitle} ${channelUsername ? '(' + channelUsername + ')' : ''}** চ্যানেলটিকে ব্যান করা হয়েছে। অনুগ্রহ করে আপনার আসল পার্সোনাল আইডি দিয়ে জয়েন করুন।`, {
-                parse_mode: 'Markdown'
-            }).catch(() => null);
-
-            if (warningMsg) {
-                setTimeout(() => {
-                    bot.deleteMessage(chatId, warningMsg.message_id).catch(() => {});
-                }, 15000); // Delete warning after 15 seconds
             }
         }
     } catch (e) {

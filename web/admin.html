@@ -5512,9 +5512,9 @@
                                 <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-red-500/20">
                                     <div>
                                         <div class="text-sm font-bold text-red-400 flex items-center gap-1">
-                                            <i class="fas fa-ban text-xs animate-pulse"></i> Block Channel Accounts (চ্যানেল অ্যাকাউন্ট ব্যান)
+                                            <i class="fas fa-ban text-xs animate-pulse"></i> Block Channel Accounts
                                         </div>
-                                        <div class="text-[10px] text-gray-500">Auto-ban channels joining or posting in group (লাইভ স্ট্রিম প্রোটেকশন)</div>
+                                        <div class="text-[10px] text-gray-500">Auto-ban channels joining or posting in groups & channels during live streams</div>
                                     </div>
                                     <label class="relative inline-flex items-center cursor-pointer">
                                         <input type="checkbox" id="gm_blockChannelAccounts" class="sr-only peer">
@@ -5589,6 +5589,42 @@
                             </div>
                         </div>
 
+                        <!-- Live Stream & Post Assistant -->
+                        <div class="glass-card p-4 md:p-6 rounded-2xl border border-blue-500/20">
+                            <h4 class="font-bold mb-4 flex items-center gap-2 text-blue-400">
+                                <i class="fas fa-satellite-dish animate-pulse"></i> Live Stream & Post Assistant
+                            </h4>
+                            <div class="space-y-4">
+                                <!-- Auto Join Live Stream -->
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <div>
+                                        <div class="text-sm font-bold text-gray-200">
+                                            Live Stream Auto-Join Assistant
+                                        </div>
+                                        <div class="text-[10px] text-gray-500">Auto-join/pin status during live streams</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_autoJoinLiveStream" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                    </label>
+                                </div>
+
+                                <!-- Auto Channel Reaction -->
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <div>
+                                        <div class="text-sm font-bold text-gray-200">
+                                            Channel Post Auto Reaction
+                                        </div>
+                                        <div class="text-[10px] text-gray-500">Auto-react to new channel posts</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_autoChannelReaction" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Bot Stats Card -->
                         <div class="glass-card p-4 md:p-6 rounded-2xl border border-green-500/20">
                             <h4 class="font-bold mb-4 flex items-center gap-2">
@@ -5647,106 +5683,6 @@
                     </div>
                 </div>
 
-                <!-- Telegram Live Stream Automation Card -->
-                <div class="glass-card p-4 md:p-6 rounded-2xl mb-6 border border-purple-500/20">
-                    <h4 class="font-bold flex items-center gap-2 mb-2 text-purple-400">
-                        <i class="fas fa-video animate-pulse"></i> Telegram Live Stream Automation (লাইভ স্ট্রিম অটোমেশন)
-                    </h4>
-                    <p class="text-xs text-gray-400 mb-6 font-medium">
-                        Configure automatic live streaming to your Telegram groups or channels. You can run pre-made test pattern loops or supply customized direct stream video links (MP4) and manage start/stop schedules.
-                    </p>
-
-                    <!-- Stream Setup Form -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                        <div>
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Server URL (RTMPS)</label>
-                            <input id="stream_server_url" type="text" placeholder="rtmps://dc5-1.rtmp.t.me/s/" 
-                                class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono">
-                            <p class="text-[10px] text-gray-500 mt-1">Found under your Group/Channel's Live Stream settings.</p>
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Stream Key</label>
-                            <input id="stream_key" type="password" placeholder="Enter stream key" 
-                                class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono">
-                            <p class="text-[10px] text-gray-500 mt-1">Keep this key secret and secure.</p>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <div>
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Video Source</label>
-                            <select id="stream_video_source" onchange="toggleCustomVideoInput()"
-                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none font-bold">
-                                <option value="testsrc">💻 Built-in HD Test Pattern (No download, 100% stable)</option>
-                                <option value="custom">🔗 Custom Direct MP4 Video URL</option>
-                            </select>
-                        </div>
-                        <div id="custom_video_url_container" style="display: none;" class="md:col-span-2">
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Direct MP4 Video URL</label>
-                            <input id="stream_custom_video_url" type="text" placeholder="https://example.com/video.mp4" 
-                                class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 outline-none font-mono">
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 border-t border-white/5 pt-4">
-                        <div>
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Start Time Schedule</label>
-                            <select id="stream_start_mode" onchange="toggleScheduleStartInput()"
-                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none mb-2 font-bold">
-                                <option value="now">⚡ Start Immediately (তাত্ক্ষণিক শুরু)</option>
-                                <option value="scheduled">⏰ Set Schedule (সিডিউল সময় নির্ধারণ)</option>
-                            </select>
-                            <input id="stream_start_time" type="datetime-local" style="display: none;"
-                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none font-mono">
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Stop Time Schedule</label>
-                            <select id="stream_stop_mode" onchange="toggleScheduleStopInput()"
-                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none mb-2 font-bold">
-                                <option value="manual">🛑 Manual Stop Only (ম্যানুয়াল স্টপ)</option>
-                                <option value="scheduled">⏰ Set Auto-Stop Time (স্বয়ংক্রিয় বন্ধের সময়)</option>
-                            </select>
-                            <input id="stream_stop_time" type="datetime-local" style="display: none;"
-                                class="w-full bg-black/30 border border-white/10 p-3 rounded-lg text-white text-sm focus:border-purple-500 focus:outline-none font-mono">
-                        </div>
-                        <div class="flex flex-col justify-end">
-                            <div class="flex items-center gap-2 mb-4 p-3 bg-black/20 rounded-lg h-[46px]">
-                                <input id="stream_loop" type="checkbox" class="w-4 h-4 accent-purple-500" checked>
-                                <label class="text-xs text-gray-300 font-bold select-none cursor-pointer" for="stream_loop">🔁 Loop Video Infinitely (টানা চালানো)</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <button onclick="createLiveStream()" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 mb-6 transition-all transform hover:scale-[1.01]">
-                        <i class="fas fa-play"></i> START / SCHEDULE LIVE STREAM (লাইভ স্ট্রিম চালু করুন)
-                    </button>
-
-                    <!-- Active and History Table -->
-                    <div class="border-t border-white/10 pt-6">
-                        <h5 class="font-bold text-sm mb-4 flex items-center gap-2 text-gray-300">
-                            <i class="fas fa-history text-purple-400"></i> Stream Automation Status & Logs (লাইভ স্ট্রিম হিস্টোরি ও স্ট্যাটাস)
-                        </h5>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left text-xs">
-                                <thead class="text-gray-400 border-b border-white/10 uppercase">
-                                    <tr>
-                                        <th class="py-2">Source / Key</th>
-                                        <th class="py-2">Status</th>
-                                        <th class="py-2">Loop</th>
-                                        <th class="py-2">Start Time</th>
-                                        <th class="py-2">Stop Time</th>
-                                        <th class="py-2 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="liveStreamsTableBody">
-                                    <tr>
-                                        <td colspan="6" class="py-4 text-center text-gray-500 italic">No live streams configured. Setup a stream above to start!</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
             </div>
             <!-- REMOVE.BG API MANAGEMENT PAGE -->
             <div id="page-removebg" class="page">
@@ -6332,6 +6268,8 @@
                         'gm_deleteMentionsHashtags': 'deleteMentionsHashtags',
                         'gm_deleteDmSolicitations': 'deleteDmSolicitations',
                         'gm_blockChannelAccounts': 'blockChannelAccounts',
+                        'gm_autoJoinLiveStream': 'autoJoinLiveStream',
+                        'gm_autoChannelReaction': 'autoChannelReaction',
                         'gm_enableWarningSystem': 'enableWarningSystem',
                         'gm_enableBanCommand': 'enableBanCommand',
                         'gm_autoApproveJoinRequests': 'autoApproveJoinRequests'
@@ -6365,6 +6303,23 @@
                     if (autoApproveEl && !autoApproveEl.dataset.listenerAdded) {
                         autoApproveEl.dataset.listenerAdded = 'true';
                         autoApproveEl.addEventListener('change', function () {
+                            saveGroupManagementSettings();
+                        });
+                    }
+
+                    // Setup auto-save for live stream / reaction toggles
+                    const ajlsElToggle = document.getElementById('gm_autoJoinLiveStream');
+                    if (ajlsElToggle && !ajlsElToggle.dataset.listenerAdded) {
+                        ajlsElToggle.dataset.listenerAdded = 'true';
+                        ajlsElToggle.addEventListener('change', function () {
+                            saveGroupManagementSettings();
+                        });
+                    }
+
+                    const acrElToggle = document.getElementById('gm_autoChannelReaction');
+                    if (acrElToggle && !acrElToggle.dataset.listenerAdded) {
+                        acrElToggle.dataset.listenerAdded = 'true';
+                        acrElToggle.addEventListener('change', function () {
                             saveGroupManagementSettings();
                         });
                     }
@@ -14382,6 +14337,12 @@
                     document.getElementById('gm_banCommand').value = s.banCommand || 'ban';
                     // Load Auto-Approve Join Request
                     document.getElementById('gm_autoApproveJoinRequests').checked = s.autoApproveJoinRequests === true;
+                    
+                    // Load Live Stream & Channel Post Assistant
+                    const ajlsEl = document.getElementById('gm_autoJoinLiveStream');
+                    if (ajlsEl) ajlsEl.checked = s.autoJoinLiveStream === true;
+                    const acrEl = document.getElementById('gm_autoChannelReaction');
+                    if (acrEl) acrEl.checked = s.autoChannelReaction === true;
 
                     // Explicitly set autoApproveJoinRequests from server value (never default to true)
                     const aaEl = document.getElementById('gm_autoApproveJoinRequests');
@@ -14418,7 +14379,9 @@
                 warningMessage: document.getElementById('gm_warningMessage')?.value || "",
                 enableBanCommand: document.getElementById('gm_enableBanCommand')?.checked || false,
                 banCommand: document.getElementById('gm_banCommand')?.value || "",
-                autoApproveJoinRequests: document.getElementById('gm_autoApproveJoinRequests')?.checked === true
+                autoApproveJoinRequests: document.getElementById('gm_autoApproveJoinRequests')?.checked === true,
+                autoJoinLiveStream: document.getElementById('gm_autoJoinLiveStream')?.checked || false,
+                autoChannelReaction: document.getElementById('gm_autoChannelReaction')?.checked || false
             };
 
             try {

@@ -6532,302 +6532,22 @@ app.post('/api/admin/groups/leave', async (req, res) => {
 });
 
 // =============================================
-// TELEGRAM LIVE STREAM AUTOMATION API & SCHEDULER
+// TELEGRAM LIVE STREAM AUTOMATION API & SCHEDULER (REMOVED / STUBBED)
 // =============================================
-const { spawn } = require('child_process');
-const activeStreamProcesses = new Map();
-
-function isProcessRunning(pid) {
-    if (!pid) return false;
-    try {
-        process.kill(pid, 0);
-        return true;
-    } catch (e) {
-        return false;
-    }
-}
-
-async function startStreamProcess(stream) {
-    if (!db.data || !db.data.liveStreams) return;
-    
-    const fullRtmpUrl = stream.serverUrl.endsWith('/') 
-        ? `${stream.serverUrl}${stream.streamKey}` 
-        : `${stream.serverUrl}/${stream.streamKey}`;
-
-    let args = [];
-    const videoSource = stream.videoSource || 'testsrc';
-
-    if (videoSource === 'testsrc') {
-        // High-quality test pattern with running clock and sine audio track (100% stable, no file download required)
-        args = [
-            '-re',
-            '-f', 'lavfi', '-i', 'testsrc=size=1280x720:rate=30',
-            '-f', 'lavfi', '-i', 'sine=frequency=1000',
-            '-vcodec', 'libx264',
-            '-preset', 'veryfast',
-            '-b:v', '1500k',
-            '-maxrate', '1500k',
-            '-bufsize', '3000k',
-            '-acodec', 'aac',
-            '-b:a', '128k',
-            '-f', 'flv',
-            fullRtmpUrl
-        ];
-    } else {
-        // Custom URL or MP4 source
-        args = [];
-        if (stream.loop) {
-            args.push('-stream_loop', '-1');
-        }
-        args.push('-re', '-i', videoSource);
-        args.push(
-            '-c:v', 'libx264',
-            '-preset', 'veryfast',
-            '-b:v', '2000k',
-            '-maxrate', '2000k',
-            '-bufsize', '4000k',
-            '-c:a', 'aac',
-            '-b:a', '128k',
-            '-f', 'flv',
-            fullRtmpUrl
-        );
-    }
-
-    console.log(`[Stream ${stream.id}] Spawning ffmpeg process with args:`, args.join(' '));
-
-    try {
-        const child = spawn('ffmpeg', args, { detached: true, stdio: 'ignore' });
-        child.unref();
-
-        const streamIndex = db.data.liveStreams.findIndex(s => s.id === stream.id);
-        if (streamIndex !== -1) {
-            db.data.liveStreams[streamIndex].status = 'active';
-            db.data.liveStreams[streamIndex].pid = child.pid;
-            db.data.liveStreams[streamIndex].startedAt = new Date().toISOString();
-            db.data.liveStreams[streamIndex].error = null;
-            db.save();
-        }
-
-        activeStreamProcesses.set(stream.id, child);
-
-        child.on('error', (err) => {
-            console.error(`[Stream ${stream.id}] ffmpeg spawn error:`, err);
-            const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
-            if (idx !== -1) {
-                db.data.liveStreams[idx].status = 'failed';
-                db.data.liveStreams[idx].error = err.message;
-                db.save();
-            }
-            activeStreamProcesses.delete(stream.id);
-        });
-
-        child.on('exit', (code, signal) => {
-            console.log(`[Stream ${stream.id}] ffmpeg process terminated: code=${code}, signal=${signal}`);
-            activeStreamProcesses.delete(stream.id);
-            
-            const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
-            if (idx !== -1 && db.data.liveStreams[idx].status === 'active') {
-                if (code === 0) {
-                    db.data.liveStreams[idx].status = 'completed';
-                } else {
-                    db.data.liveStreams[idx].status = 'failed';
-                    db.data.liveStreams[idx].error = `Exited with code ${code}`;
-                }
-                db.save();
-            }
-        });
-
-    } catch (err) {
-        console.error(`[Stream ${stream.id}] Failed to start ffmpeg:`, err);
-        const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
-        if (idx !== -1) {
-            db.data.liveStreams[idx].status = 'failed';
-            db.data.liveStreams[idx].error = err.message;
-            db.save();
-        }
-    }
-}
-
-function stopStreamProcess(streamId) {
-    const child = activeStreamProcesses.get(streamId);
-    if (child) {
-        try {
-            process.kill(-child.pid);
-        } catch (e) {
-            try {
-                child.kill('SIGKILL');
-            } catch (err) {}
-        }
-        activeStreamProcesses.delete(streamId);
-    } else {
-        const stream = db.data.liveStreams?.find(s => s.id === streamId);
-        if (stream && stream.pid && isProcessRunning(stream.pid)) {
-            try {
-                process.kill(stream.pid, 'SIGKILL');
-            } catch (e) {}
-        }
-    }
-
-    const idx = db.data.liveStreams.findIndex(s => s.id === streamId);
-    if (idx !== -1) {
-        db.data.liveStreams[idx].status = 'stopped';
-        db.data.liveStreams[idx].stoppedAt = new Date().toISOString();
-        db.save();
-    }
-}
-
-// Background scheduler running every 10 seconds
-setInterval(() => {
-    if (!db.data || !db.data.liveStreams) return;
-
-    const now = new Date();
-
-    db.data.liveStreams.forEach(stream => {
-        if (stream.status === 'scheduled') {
-            const start = stream.startTime ? new Date(stream.startTime) : null;
-            if (!start || start <= now) {
-                startStreamProcess(stream);
-            }
-        }
-
-        if (stream.status === 'active') {
-            let running = false;
-            if (activeStreamProcesses.has(stream.id)) {
-                running = true;
-            } else if (stream.pid && isProcessRunning(stream.pid)) {
-                running = true;
-            }
-
-            if (!running) {
-                const idx = db.data.liveStreams.findIndex(s => s.id === stream.id);
-                if (idx !== -1) {
-                    db.data.liveStreams[idx].status = 'failed';
-                    db.data.liveStreams[idx].error = 'ffmpeg stream process crashed or exited';
-                    db.save();
-                }
-            } else {
-                if (stream.stopTime) {
-                    const stop = new Date(stream.stopTime);
-                    if (stop <= now) {
-                        console.log(`[Stream ${stream.id}] Auto-stop schedule reached. Terminating stream...`);
-                        stopStreamProcess(stream.id);
-                    }
-                }
-            }
-        }
-    });
-}, 10000);
-
-// API Routes for Live Stream Automation
 app.get('/api/admin/live-streams', (req, res) => {
-    try {
-        if (!db.data.liveStreams) {
-            db.data.liveStreams = [];
-            db.save();
-        }
-
-        db.data.liveStreams.forEach(stream => {
-            if (stream.status === 'active') {
-                let running = false;
-                if (activeStreamProcesses.has(stream.id)) {
-                    running = true;
-                } else if (stream.pid && isProcessRunning(stream.pid)) {
-                    running = true;
-                }
-                if (!running) {
-                    stream.status = 'failed';
-                    stream.error = 'Process not found (server rebooted or crash)';
-                }
-            }
-        });
-        db.save();
-
-        res.json({ success: true, streams: db.data.liveStreams });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
+    res.json({ success: true, streams: [] });
 });
 
 app.post('/api/admin/live-streams', async (req, res) => {
-    const { serverUrl, streamKey, videoSource, loop, startTime, stopTime } = req.body;
-    if (!serverUrl || !streamKey) {
-        return res.status(400).json({ success: false, error: 'Server URL and Stream Key are required' });
-    }
-
-    try {
-        if (!db.data.liveStreams) {
-            db.data.liveStreams = [];
-        }
-
-        const id = 'stream_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
-        const newStream = {
-            id,
-            serverUrl,
-            streamKey,
-            videoSource: videoSource || 'testsrc',
-            loop: !!loop,
-            startTime: startTime || null,
-            stopTime: stopTime || null,
-            status: startTime ? 'scheduled' : 'active',
-            pid: null,
-            createdAt: new Date().toISOString(),
-            startedAt: null,
-            stoppedAt: null,
-            error: null
-        };
-
-        db.data.liveStreams.push(newStream);
-        db.save();
-
-        if (!startTime) {
-            await startStreamProcess(newStream);
-        }
-
-        res.json({ success: true, stream: newStream });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
+    res.json({ success: true, stream: {} });
 });
 
 app.post('/api/admin/live-streams/:id/stop', (req, res) => {
-    const { id } = req.params;
-    try {
-        if (!db.data.liveStreams) {
-            return res.status(404).json({ success: false, error: 'No live streams configured' });
-        }
-
-        const stream = db.data.liveStreams.find(s => s.id === id);
-        if (!stream) {
-            return res.status(404).json({ success: false, error: 'Live stream not found' });
-        }
-
-        stopStreamProcess(id);
-        res.json({ success: true, message: 'Live stream stopped successfully' });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
+    res.json({ success: true, message: 'Stopped' });
 });
 
 app.delete('/api/admin/live-streams/:id', (req, res) => {
-    const { id } = req.params;
-    try {
-        if (!db.data.liveStreams) {
-            return res.status(404).json({ success: false, error: 'No live streams configured' });
-        }
-
-        const stream = db.data.liveStreams.find(s => s.id === id);
-        if (stream) {
-            if (stream.status === 'active') {
-                stopStreamProcess(id);
-            }
-            db.data.liveStreams = db.data.liveStreams.filter(s => s.id !== id);
-            db.save();
-        }
-
-        res.json({ success: true, message: 'Live stream configuration deleted' });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
+    res.json({ success: true, message: 'Deleted' });
 });
 
 // API: Cost Management (Get)
@@ -11974,13 +11694,54 @@ app.post('/api/video-downloader/info', async (req, res) => {
         else if (url.includes('twitch.tv')) platform = 'twitch';
 
         // ── 1. cobalt.tools API (free, no key, direct download URLs) ──
-        try {
-            const cobaltRes = await axios.post('https://api.cobalt.tools/',
-                { url, vCodec: 'h264', vQuality: '1080', aFormat: 'mp3', filenamePattern: 'basic', isAudioOnly: false, disableMetadata: false },
-                { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'AutosVerify/1.0' }, timeout: 20000 }
-            );
-            const cd = cobaltRes.data;
-            if (cd && (cd.status === 'stream' || cd.status === 'redirect' || cd.status === 'tunnel') && cd.url) {
+        const tryCobalt = async (videoUrl) => {
+            const endpoints = [
+                'https://api.cobalt.tools/',
+                'https://co.wuk.sh/api/json',
+                'https://cobalt.as93.net/'
+            ];
+            
+            const payload = {
+                url: videoUrl,
+                videoQuality: '1080',
+                vQuality: '1080',
+                vCodec: 'h264',
+                audioFormat: 'mp3',
+                audioBitrate: '320',
+                aFormat: 'mp3',
+                filenamePattern: 'classic',
+                isAudioOnly: false,
+                isNoTTWatermark: true,
+                disableMetadata: false
+            };
+
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Referer': 'https://cobalt.tools/',
+                'Origin': 'https://cobalt.tools',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            };
+
+            for (const endpoint of endpoints) {
+                try {
+                    console.log(`[Video Downloader] Trying Cobalt endpoint: ${endpoint} for ${videoUrl}`);
+                    const res = await axios.post(endpoint, payload, { headers, timeout: 12000 });
+                    const cd = res.data;
+                    if (cd && (cd.url || (cd.picker && cd.picker.length > 0))) {
+                        console.log(`[Video Downloader] Cobalt success via ${endpoint}`);
+                        return cd;
+                    }
+                } catch (err) {
+                    console.warn(`[Video Downloader] Cobalt endpoint ${endpoint} failed:`, err.message);
+                }
+            }
+            return null;
+        };
+
+        const cd = await tryCobalt(url);
+        if (cd) {
+            if (cd.url) {
                 const dlUrl = cd.url;
                 const ytId = platform === 'youtube' ? (url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1] || null) : null;
                 const thumbnail = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : (cd.thumbnail || '');
@@ -11999,7 +11760,7 @@ app.post('/api/video-downloader/info', async (req, res) => {
                 });
             }
             // picker (multiple items e.g. Instagram carousel)
-            if (cd && cd.status === 'picker' && cd.picker && cd.picker.length > 0) {
+            if (cd.picker && cd.picker.length > 0) {
                 const ytId = platform === 'youtube' ? (url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1] || null) : null;
                 const thumbnail = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : (cd.thumbnail || '');
                 return res.json({
@@ -12017,8 +11778,6 @@ app.post('/api/video-downloader/info', async (req, res) => {
                     _cobalt: true
                 });
             }
-        } catch (cobaltErr) {
-            console.warn('[Video Downloader] cobalt.tools failed:', cobaltErr.message);
         }
 
         // ── 2. RapidAPI (paid, best quality) ──────────────────────────
@@ -12121,6 +11880,69 @@ app.post('/api/video-downloader/info', async (req, res) => {
                     author = oembed.data.author_name || '';
                 }
             } catch (e) {}
+
+            // Try Y2Mate integration
+            try {
+                const params = new URLSearchParams();
+                params.append('k_query', url);
+                params.append('k_page', 'home');
+                params.append('hl', 'en');
+                params.append('q_auto', '1');
+
+                const y2Headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                };
+
+                console.log(`[Video Downloader] Querying Y2Mate for YouTube: ${url}`);
+                const y2Res = await axios.post('https://www.y2mate.com/mates/analyzeV2/ajax', params.toString(), { headers: y2Headers, timeout: 10000 });
+                
+                if (y2Res.data && y2Res.data.status === 'ok' && y2Res.data.links) {
+                    const formats = [];
+                    const vid = y2Res.data.vid;
+
+                    // Parse mp4 links
+                    if (y2Res.data.links.mp4) {
+                        for (const [key, val] of Object.entries(y2Res.data.links.mp4)) {
+                            if (val && val.k) {
+                                formats.push({
+                                    quality: `${val.q_text || val.q || 'MP4'} (${val.size || 'Unknown size'})`,
+                                    url: `${req.protocol}://${req.get('host')}/api/video-downloader/y2mate-dl?vid=${encodeURIComponent(vid)}&k=${encodeURIComponent(val.k)}`,
+                                    type: 'mp4'
+                                });
+                            }
+                        }
+                    }
+
+                    // Parse mp3 links
+                    if (y2Res.data.links.mp3) {
+                        for (const [key, val] of Object.entries(y2Res.data.links.mp3)) {
+                            if (val && val.k) {
+                                formats.push({
+                                    quality: `Audio MP3 ${val.q_text || val.q || '128kbps'} (${val.size || 'Unknown size'})`,
+                                    url: `${req.protocol}://${req.get('host')}/api/video-downloader/y2mate-dl?vid=${encodeURIComponent(vid)}&k=${encodeURIComponent(val.k)}`,
+                                    type: 'audio'
+                                });
+                            }
+                        }
+                    }
+
+                    if (formats.length > 0) {
+                        return res.json({
+                            success: true,
+                            title: y2Res.data.title || title,
+                            thumbnail: y2Res.data.vid ? `https://i.ytimg.com/vi/${y2Res.data.vid}/0.jpg` : thumbnail,
+                            description: y2Res.data.a ? `Uploaded by ${y2Res.data.a}.` : (author ? `Uploaded by ${author}.` : ''),
+                            platform: 'youtube',
+                            formats: formats
+                        });
+                    }
+                }
+            } catch (y2Err) {
+                console.warn('[Video Downloader] Y2Mate analyze failed:', y2Err.message);
+            }
+
             return res.json({
                 success: true,
                 title,
@@ -12128,7 +11950,7 @@ app.post('/api/video-downloader/info', async (req, res) => {
                 description: author ? `Uploaded by ${author}.` : '',
                 platform: 'youtube',
                 formats: [],
-                message: 'Direct YouTube video download is restricted, but you can download Thumbnail, view Video Details, check Copyright risk, and generate optimized SEO below!'
+                message: 'Direct YouTube video download is currently unavailable, but you can download the Thumbnail, view Video Details, check Copyright risk, and generate optimized SEO below!'
             });
         }
 
@@ -12143,6 +11965,40 @@ app.post('/api/video-downloader/info', async (req, res) => {
     } catch (e) {
         console.error('[Video Downloader Error]', e.message);
         res.status(500).json({ success: false, message: e.message || 'Failed to fetch video info' });
+    }
+});
+
+// Y2Mate Proxy/Redirect Downloader Endpoint
+app.get('/api/video-downloader/y2mate-dl', async (req, res) => {
+    const { vid, k } = req.query;
+    if (!vid || !k) {
+        return res.status(400).send('vid and k are required');
+    }
+
+    try {
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+        };
+
+        const convertParams = new URLSearchParams();
+        convertParams.append('vid', vid);
+        convertParams.append('k', k);
+
+        console.log(`[Y2Mate DL] Converting vid: ${vid}, k: ${k}`);
+        const convertRes = await axios.post('https://www.y2mate.com/mates/convertV2/index', convertParams.toString(), { headers, timeout: 15000 });
+        
+        if (convertRes.data && convertRes.data.status === 'ok' && convertRes.data.dlink) {
+            console.log(`[Y2Mate DL] Redirection success to: ${convertRes.data.dlink}`);
+            return res.redirect(convertRes.data.dlink);
+        } else {
+            console.error('[Y2Mate DL] Failed to convert. Response:', convertRes.data);
+            return res.status(500).send('Failed to generate download link from Y2Mate. Please try again.');
+        }
+    } catch (err) {
+        console.error('[Y2Mate DL] Error during conversion:', err.message);
+        return res.status(500).send('Internal error during Y2Mate conversion: ' + err.message);
     }
 });
 
