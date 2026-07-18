@@ -527,26 +527,10 @@ async function handleLiveStreamEvent(chatId, eventType, msg) {
         if (eventType === 'started') {
             console.log(`[LIVESTREAM] Auto-join triggered for chat ${chatId}`);
             
-            // Dynamic statuses based on userbot settings
-            const userbotStatus = settings.userbotEnabled 
-                ? `✅ Configured & Active (API ID: ${settings.userbotApiId || 'Provided'})` 
-                : `❌ Off (Using Standard Bot API)`;
-            const musicStatus = (settings.userbotEnabled && settings.userbotMusicPlayback) 
-                ? `✅ On (High-quality live audio stream initialized!)` 
-                : `❌ Off`;
-            const autoJoinStatus = (settings.userbotEnabled && settings.userbotAutoJoinVoiceChat)
-                ? `✅ On (Userbot account physically joining the voice chat)`
-                : `❌ Off`;
-
             const assistantMsgText = `🎙️ **Bot Assistant Live Stream Protection Active!**\n\n` +
                 `🛡️ **Active Background Protection:** Enabled\n` +
                 `🚫 **Channel Accounts:** Blocked immediately on join\n` +
-                `🎙️ **Voice Chat Participants:** Auto-unmuted after 1 minute\n\n` +
-                `⚙️ **Userbot/MTProto Integration (গ্রুপ ম্যানেজমেন্ট):\n` +
-                `• **Userbot Status:** ${userbotStatus}\n` +
-                `• **Music Playback (গান বাজানো):** ${musicStatus}\n` +
-                `• **Userbot Auto-Join:** ${autoJoinStatus}\n\n` +
-                `*Note:* Standard bots are restricted from physically appearing in the media/voice participant streaming list itself. By setting up the **Userbot** config in your Admin Panel, your account can auto-join, manage mute status, and play music/audio directly!`;
+                `🎙️ **Voice Chat Participants:** Auto-unmuted after 1 minute`;
             
             const sentMsg = await bot.sendMessage(chatId, assistantMsgText, { parse_mode: 'Markdown' });
             if (sentMsg && sentMsg.message_id) {
