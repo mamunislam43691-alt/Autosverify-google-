@@ -5461,6 +5461,70 @@
                             </div>
                         </div>
 
+                        <!-- Userbot (MTProto Client) Configuration -->
+                        <div class="glass-card p-4 md:p-6 rounded-2xl border border-purple-500/30">
+                            <div class="flex items-center justify-between mb-4">
+                                <h4 class="font-bold flex items-center gap-2">
+                                    <i class="fas fa-user-shield text-purple-400 animate-pulse"></i> Userbot (MTProto Client)
+                                </h4>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="gm_userbotEnabled" class="sr-only peer">
+                                    <div
+                                        class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500">
+                                    </div>
+                                </label>
+                            </div>
+                            <p class="text-xs text-gray-400 mb-4">
+                                Standard bots are restricted by Telegram's Bot API and cannot physically join voice/video chat participants list, speak, or play music/audio. 
+                                By adding a <b>Userbot (MTProto Client / Pyrogram / Telethon / GramJS)</b>, your configured user account can join streams, unmute/mute, and play music/audio alongside standard bot commands!
+                            </p>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot API ID</label>
+                                    <input type="text" id="gm_userbotApiId" placeholder="e.g. 1234567"
+                                        class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot API Hash</label>
+                                    <input type="password" id="gm_userbotApiHash" placeholder="e.g. a1b2c3d4e5f6g7h8i9j0"
+                                        class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot Session String / Phone Number</label>
+                                    <textarea id="gm_userbotSessionString" rows="3"
+                                        placeholder="Enter Pyrogram / Telethon session string or phone number..."
+                                        class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none resize-none"></textarea>
+                                </div>
+
+                                <!-- Userbot Feature Toggles -->
+                                <div class="border-t border-white/10 pt-4 mt-2 space-y-3">
+                                    <h5 class="text-xs uppercase tracking-wider font-bold text-purple-400">Userbot Features</h5>
+                                    
+                                    <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-purple-500/10">
+                                        <div>
+                                            <div class="text-sm font-semibold">Music & Audio Playback (গান বাজানো)</div>
+                                            <div class="text-xs text-gray-400">Allows the Userbot to play high-quality music/audio in live streams & voice chats upon joining.</div>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="gm_userbotMusicPlayback" class="sr-only peer">
+                                            <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
+                                        </label>
+                                    </div>
+
+                                    <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-purple-500/10">
+                                        <div>
+                                            <div class="text-sm font-semibold">Auto-Join Video & Voice Chats</div>
+                                            <div class="text-xs text-gray-400">Enables the Userbot account to physically join active streams as a voice chat participant.</div>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="gm_userbotAutoJoinVoiceChat" class="sr-only peer">
+                                            <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Info Box -->
                         <div class="glass-card p-4 rounded-2xl border border-blue-500/20">
                             <div class="flex items-start gap-3">
@@ -14344,6 +14408,21 @@
                     const acrEl = document.getElementById('gm_autoChannelReaction');
                     if (acrEl) acrEl.checked = s.autoChannelReaction === true;
 
+                    // Load Userbot Configuration
+                    const uEnabledEl = document.getElementById('gm_userbotEnabled');
+                    if (uEnabledEl) uEnabledEl.checked = s.userbotEnabled === true;
+                    const uApiIdEl = document.getElementById('gm_userbotApiId');
+                    if (uApiIdEl) uApiIdEl.value = s.userbotApiId || '';
+                    const uApiHashEl = document.getElementById('gm_userbotApiHash');
+                    if (uApiHashEl) uApiHashEl.value = s.userbotApiHash || '';
+                    const uSessionEl = document.getElementById('gm_userbotSessionString');
+                    if (uSessionEl) uSessionEl.value = s.userbotSessionString || '';
+
+                    const uMusicEl = document.getElementById('gm_userbotMusicPlayback');
+                    if (uMusicEl) uMusicEl.checked = s.userbotMusicPlayback === true;
+                    const uAutoJoinEl = document.getElementById('gm_userbotAutoJoinVoiceChat');
+                    if (uAutoJoinEl) uAutoJoinEl.checked = s.userbotAutoJoinVoiceChat === true;
+
                     // Explicitly set autoApproveJoinRequests from server value (never default to true)
                     const aaEl = document.getElementById('gm_autoApproveJoinRequests');
                     if (aaEl) aaEl.checked = s.autoApproveJoinRequests === true;
@@ -14381,7 +14460,13 @@
                 banCommand: document.getElementById('gm_banCommand')?.value || "",
                 autoApproveJoinRequests: document.getElementById('gm_autoApproveJoinRequests')?.checked === true,
                 autoJoinLiveStream: document.getElementById('gm_autoJoinLiveStream')?.checked || false,
-                autoChannelReaction: document.getElementById('gm_autoChannelReaction')?.checked || false
+                autoChannelReaction: document.getElementById('gm_autoChannelReaction')?.checked || false,
+                userbotEnabled: document.getElementById('gm_userbotEnabled')?.checked || false,
+                userbotApiId: document.getElementById('gm_userbotApiId')?.value || "",
+                userbotApiHash: document.getElementById('gm_userbotApiHash')?.value || "",
+                userbotSessionString: document.getElementById('gm_userbotSessionString')?.value || "",
+                userbotMusicPlayback: document.getElementById('gm_userbotMusicPlayback')?.checked || false,
+                userbotAutoJoinVoiceChat: document.getElementById('gm_userbotAutoJoinVoiceChat')?.checked || false
             };
 
             try {

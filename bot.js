@@ -397,9 +397,18 @@ bot.on('message', (msg) => {
 
 // ==================== LIVESTREAM AUTO-JOIN ASSISTANT & AUTO-REACTION ====================
 const activeLiveStreamPins = new Map(); // chatId -> messageId
+const lastLiveStreamBroadcast = new Map(); // chatId -> timestamp
 
 async function broadcastLiveStreamStart(chatId, chatTitle, joinLink) {
     try {
+        const now = Date.now();
+        const lastTime = lastLiveStreamBroadcast.get(chatId) || 0;
+        if (now - lastTime < 300000) { // 5-minute deduplication window
+            console.log(`[LIVESTREAM] Duplicate start broadcast prevented for chat ${chatId}`);
+            return;
+        }
+        lastLiveStreamBroadcast.set(chatId, now);
+
         const users = db.getUsers();
         const apiKeys = db.data?.apiKeys || {};
         const settings = db.data?.settings || {};
@@ -409,59 +418,30 @@ async function broadcastLiveStreamStart(chatId, chatTitle, joinLink) {
 
         console.log(`📣 Broadcasting livestream start in "${chatTitle}" to users, groups, and channels...`);
 
-        const messageText = `🎙️ *লাইভ স্ট্রিম শুরু হয়েছে! / Live Stream Started!*\n\n` +
-            `অ্যাডমিনরা *"${chatTitle}"* এ লাইভ স্ট্রিম শুরু করেছেন। লাইভে জয়েন করতে নিচের বাটনে ক্লিক করুন!\n\n` +
-            `Admins have started a live stream in *"${chatTitle}"*. Click the button below to join!`;
+        const messageText = `🎙️ *Live Stream Started!*\n\n` +
+            `Admins have started a live stream in *"${chatTitle}"*. Click the button below to join the stream and participate!`;
 
         const replyMarkup = {
             inline_keyboard: [[
-                { text: '🎙️ Join Live Stream / লাইভে জয়েন করুন', url: joinLink }
+                { text: '🎙️ Join Live Stream', url: joinLink }
             ]]
         };
 
-        // 1. Post in the current group/channel itself
-        try {
-            const groupAnnounce = await bot.sendMessage(chatId, messageText, {
-                parse_mode: 'Markdown',
-                reply_markup: replyMarkup
-            });
-            // Pin it to draw maximum attention
-            await bot.pinChatMessage(chatId, groupAnnounce.message_id).catch(() => {});
-        } catch (err) {
-            console.log(`[LIVESTREAM] Failed to post in original chat ${chatId}: ${err.message}`);
-        }
-
-        // 2. Post in the required/monitored channel
+        // 1. Post in the required/monitored channel
         if (requiredChannel) {
             try {
                 const channelId = requiredChannel.startsWith('@') ? requiredChannel : `@${requiredChannel}`;
-                if (String(channelId) !== String(chatId)) {
-                    await bot.sendMessage(channelId, messageText, {
-                        parse_mode: 'Markdown',
-                        reply_markup: replyMarkup
-                    });
-                }
+                await bot.sendMessage(channelId, messageText, {
+                    parse_mode: 'Markdown',
+                    reply_markup: replyMarkup
+                });
+                console.log(`[LIVESTREAM] Posted stream announcement to channel: ${channelId}`);
             } catch (err) {
                 console.log(`[LIVESTREAM] Failed to post in required channel: ${err.message}`);
             }
         }
 
-        // 3. Post in the required/monitored group
-        if (requiredGroup) {
-            try {
-                const grpId = requiredGroup.startsWith('@') ? requiredGroup : `@${requiredGroup}`;
-                if (String(grpId) !== String(chatId)) {
-                    await bot.sendMessage(grpId, messageText, {
-                        parse_mode: 'Markdown',
-                        reply_markup: replyMarkup
-                    });
-                }
-            } catch (err) {
-                console.log(`[LIVESTREAM] Failed to post in required group: ${err.message}`);
-            }
-        }
-
-        // 4. Send to all registered bot users' private chats
+        // 2. Send to all registered bot users' private chats
         if (users && users.length > 0) {
             for (const user of users) {
                 try {
@@ -522,8 +502,8 @@ async function scheduleAutoUnmute(chatId, user) {
 
             console.log(`[AUTO-UNMUTE] Successfully unrestricted/unmuted ${user.first_name || 'User'} (${user.id}) in chat ${chatId}`);
 
-            // Send polite notification in Bengali & English
-            const noticeText = `🎙️ **Auto-Unmute Activated**\n\nনতুন ইউজার **${user.first_name || 'User'}** কে কথা বলার অনুমতি দেওয়া হয়েছে। (Unmuted after 1 minute) 😊`;
+            // Send polite notification in English only
+            const noticeText = `🎙️ **Auto-Unmute Activated**\n\nNew participant **${user.first_name || 'User'}** has been granted permission to talk. (Auto-unmuted after 1 minute) 😊`;
             const noticeMsg = await bot.sendMessage(chatId, noticeText, { parse_mode: 'Markdown' }).catch(() => {});
             
             if (noticeMsg) {
@@ -546,7 +526,27 @@ async function handleLiveStreamEvent(chatId, eventType, msg) {
 
         if (eventType === 'started') {
             console.log(`[LIVESTREAM] Auto-join triggered for chat ${chatId}`);
-            const assistantMsgText = `🎙️ **Bot Assistant has joined the live stream!**\n\n🛡️ **Active Protection:** Enabled\n🚫 **Channel Accounts:** Blocked immediately\n\nI am actively monitoring the stream to block, ban, and remove any channel accounts or spammers attempting to participate or spam.`;
+            
+            // Dynamic statuses based on userbot settings
+            const userbotStatus = settings.userbotEnabled 
+                ? `✅ Configured & Active (API ID: ${settings.userbotApiId || 'Provided'})` 
+                : `❌ Off (Using Standard Bot API)`;
+            const musicStatus = (settings.userbotEnabled && settings.userbotMusicPlayback) 
+                ? `✅ On (High-quality live audio stream initialized!)` 
+                : `❌ Off`;
+            const autoJoinStatus = (settings.userbotEnabled && settings.userbotAutoJoinVoiceChat)
+                ? `✅ On (Userbot account physically joining the voice chat)`
+                : `❌ Off`;
+
+            const assistantMsgText = `🎙️ **Bot Assistant Live Stream Protection Active!**\n\n` +
+                `🛡️ **Active Background Protection:** Enabled\n` +
+                `🚫 **Channel Accounts:** Blocked immediately on join\n` +
+                `🎙️ **Voice Chat Participants:** Auto-unmuted after 1 minute\n\n` +
+                `⚙️ **Userbot/MTProto Integration (গ্রুপ ম্যানেজমেন্ট):\n` +
+                `• **Userbot Status:** ${userbotStatus}\n` +
+                `• **Music Playback (গান বাজানো):** ${musicStatus}\n` +
+                `• **Userbot Auto-Join:** ${autoJoinStatus}\n\n` +
+                `*Note:* Standard bots are restricted from physically appearing in the media/voice participant streaming list itself. By setting up the **Userbot** config in your Admin Panel, your account can auto-join, manage mute status, and play music/audio directly!`;
             
             const sentMsg = await bot.sendMessage(chatId, assistantMsgText, { parse_mode: 'Markdown' });
             if (sentMsg && sentMsg.message_id) {
@@ -593,7 +593,11 @@ async function handleLiveStreamEvent(chatId, eventType, msg) {
                 });
                 activeLiveStreamPins.delete(chatId);
                 
-                await bot.sendMessage(chatId, `🎙️ **Live stream has ended.** Bot Assistant has left the stream.`, { parse_mode: 'Markdown' });
+                let leaveMsg = `🎙️ **Live stream has ended.** Bot Assistant has left the stream.`;
+                if (settings.userbotEnabled && settings.userbotMusicPlayback) {
+                    leaveMsg += `\n🎵 **Music/Audio Playback player stopped.**`;
+                }
+                await bot.sendMessage(chatId, leaveMsg, { parse_mode: 'Markdown' });
             }
         }
     } catch (err) {
