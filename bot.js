@@ -398,10 +398,151 @@ bot.on('message', (msg) => {
 // ==================== LIVESTREAM AUTO-JOIN ASSISTANT & AUTO-REACTION ====================
 const activeLiveStreamPins = new Map(); // chatId -> messageId
 
+async function broadcastLiveStreamStart(chatId, chatTitle, joinLink) {
+    try {
+        const users = db.getUsers();
+        const apiKeys = db.data?.apiKeys || {};
+        const settings = db.data?.settings || {};
+        
+        const requiredChannel = apiKeys.requiredChannel || settings.requiredChannel || config.REQUIRED_CHANNEL || '';
+        const requiredGroup = apiKeys.requiredGroup || settings.requiredGroup || config.REQUIRED_GROUP || '';
+
+        console.log(`📣 Broadcasting livestream start in "${chatTitle}" to users, groups, and channels...`);
+
+        const messageText = `🎙️ *লাইভ স্ট্রিম শুরু হয়েছে! / Live Stream Started!*\n\n` +
+            `অ্যাডমিনরা *"${chatTitle}"* এ লাইভ স্ট্রিম শুরু করেছেন। লাইভে জয়েন করতে নিচের বাটনে ক্লিক করুন!\n\n` +
+            `Admins have started a live stream in *"${chatTitle}"*. Click the button below to join!`;
+
+        const replyMarkup = {
+            inline_keyboard: [[
+                { text: '🎙️ Join Live Stream / লাইভে জয়েন করুন', url: joinLink }
+            ]]
+        };
+
+        // 1. Post in the current group/channel itself
+        try {
+            const groupAnnounce = await bot.sendMessage(chatId, messageText, {
+                parse_mode: 'Markdown',
+                reply_markup: replyMarkup
+            });
+            // Pin it to draw maximum attention
+            await bot.pinChatMessage(chatId, groupAnnounce.message_id).catch(() => {});
+        } catch (err) {
+            console.log(`[LIVESTREAM] Failed to post in original chat ${chatId}: ${err.message}`);
+        }
+
+        // 2. Post in the required/monitored channel
+        if (requiredChannel) {
+            try {
+                const channelId = requiredChannel.startsWith('@') ? requiredChannel : `@${requiredChannel}`;
+                if (String(channelId) !== String(chatId)) {
+                    await bot.sendMessage(channelId, messageText, {
+                        parse_mode: 'Markdown',
+                        reply_markup: replyMarkup
+                    });
+                }
+            } catch (err) {
+                console.log(`[LIVESTREAM] Failed to post in required channel: ${err.message}`);
+            }
+        }
+
+        // 3. Post in the required/monitored group
+        if (requiredGroup) {
+            try {
+                const grpId = requiredGroup.startsWith('@') ? requiredGroup : `@${requiredGroup}`;
+                if (String(grpId) !== String(chatId)) {
+                    await bot.sendMessage(grpId, messageText, {
+                        parse_mode: 'Markdown',
+                        reply_markup: replyMarkup
+                    });
+                }
+            } catch (err) {
+                console.log(`[LIVESTREAM] Failed to post in required group: ${err.message}`);
+            }
+        }
+
+        // 4. Send to all registered bot users' private chats
+        if (users && users.length > 0) {
+            for (const user of users) {
+                try {
+                    await bot.sendMessage(user.id, messageText, {
+                        parse_mode: 'Markdown',
+                        reply_markup: replyMarkup
+                    });
+                    // Small delay to prevent Telegram flooding limits
+                    await new Promise(resolve => setTimeout(resolve, 80));
+                } catch (err) {
+                    // Ignore failures for blocked/inactive chats
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Error broadcasting livestream start:', e);
+    }
+}
+
+// Global map to track which users have already been auto-unmuted/unrestricted
+const unmutedUsersTracker = new Map(); // "chatId_userId" -> boolean
+
+async function scheduleAutoUnmute(chatId, user) {
+    if (!user || user.is_bot) return;
+    const key = `${chatId}_${user.id}`;
+    if (unmutedUsersTracker.get(key)) return; // Only unmute once to respect manual admin mute afterwards
+    
+    unmutedUsersTracker.set(key, true);
+    console.log(`[AUTO-UNMUTE] User ${user.first_name || 'User'} (${user.id}) joined/active in ${chatId}. Scheduling unmute in 60s...`);
+
+    setTimeout(async () => {
+        try {
+            // Check if user is still in the group and not banned/kicked
+            const chatMember = await bot.getChatMember(chatId, user.id);
+            if (['left', 'kicked', 'banned'].includes(chatMember.status)) {
+                console.log(`[AUTO-UNMUTE] User ${user.id} is no longer in chat ${chatId}, skipping.`);
+                return;
+            }
+
+            // Unrestrict the user (grant full permissions to send voice notes, media, text, etc.)
+            await bot.restrictChatMember(chatId, user.id, {
+                permissions: {
+                    can_send_messages: true,
+                    can_send_audios: true,
+                    can_send_documents: true,
+                    can_send_photos: true,
+                    can_send_videos: true,
+                    can_send_video_notes: true,
+                    can_send_voice_notes: true,
+                    can_send_polls: true,
+                    can_send_other_messages: true,
+                    can_add_web_page_previews: true,
+                    can_change_info: false,
+                    can_invite_users: true,
+                    can_pin_messages: false
+                }
+            });
+
+            console.log(`[AUTO-UNMUTE] Successfully unrestricted/unmuted ${user.first_name || 'User'} (${user.id}) in chat ${chatId}`);
+
+            // Send polite notification in Bengali & English
+            const noticeText = `🎙️ **Auto-Unmute Activated**\n\nনতুন ইউজার **${user.first_name || 'User'}** কে কথা বলার অনুমতি দেওয়া হয়েছে। (Unmuted after 1 minute) 😊`;
+            const noticeMsg = await bot.sendMessage(chatId, noticeText, { parse_mode: 'Markdown' }).catch(() => {});
+            
+            if (noticeMsg) {
+                // Auto delete notice to keep group chat tidy
+                setTimeout(() => {
+                    bot.deleteMessage(chatId, noticeMsg.message_id).catch(() => {});
+                }, 20000);
+            }
+        } catch (err) {
+            console.error(`[AUTO-UNMUTE] Failed to unmute user ${user.id} in chat ${chatId}:`, err.message);
+        }
+    }, 60000); // Wait exactly 1 minute
+}
+
 async function handleLiveStreamEvent(chatId, eventType, msg) {
     try {
         const settings = db.data?.adminSettings?.groupManagement || {};
-        if (settings.autoJoinLiveStream !== true) return;
+        // Enabled by default unless explicitly disabled
+        if (settings.autoJoinLiveStream === false) return;
 
         if (eventType === 'started') {
             console.log(`[LIVESTREAM] Auto-join triggered for chat ${chatId}`);
@@ -414,6 +555,35 @@ async function handleLiveStreamEvent(chatId, eventType, msg) {
                     console.warn(`[LIVESTREAM] Failed to pin assistant message in ${chatId}: ${err.message}`);
                 });
             }
+
+            // Build join link
+            let joinLink = '';
+            if (msg.chat && msg.chat.username) {
+                joinLink = `https://t.me/${msg.chat.username}`;
+            } else if (msg.chat && msg.chat.invite_link) {
+                joinLink = msg.chat.invite_link;
+            } else {
+                try {
+                    const chatInfo = await bot.getChat(chatId);
+                    if (chatInfo.invite_link) {
+                        joinLink = chatInfo.invite_link;
+                    } else if (chatInfo.username) {
+                        joinLink = `https://t.me/${chatInfo.username}`;
+                    }
+                } catch (e) {
+                    const cleanId = String(chatId).replace('-100', '');
+                    joinLink = `https://t.me/c/${cleanId}`;
+                }
+            }
+            if (!joinLink) {
+                const cleanId = String(chatId).replace('-100', '');
+                joinLink = `https://t.me/c/${cleanId}`;
+            }
+
+            const chatTitle = (msg.chat && msg.chat.title) || 'Our Group/Channel';
+            
+            // Broadcast to private chats of all users
+            broadcastLiveStreamStart(chatId, chatTitle, joinLink);
         } else if (eventType === 'ended') {
             console.log(`[LIVESTREAM] Auto-leave triggered for chat ${chatId}`);
             const pinnedId = activeLiveStreamPins.get(chatId);
@@ -435,7 +605,8 @@ async function handleAutoReaction(msg) {
     try {
         if (!msg.chat || !msg.message_id) return;
         const settings = db.data?.adminSettings?.groupManagement || {};
-        if (settings.autoChannelReaction !== true) return;
+        // Enabled by default unless explicitly disabled
+        if (settings.autoChannelReaction === false) return;
 
         // Choose a random emoji reaction
         const emojis = ['👍', '❤️', '🔥', '🎉', '🤩', '👏', '⚡'];
@@ -477,6 +648,8 @@ bot.on('channel_post', async (msg) => {
     } else {
         // Trigger auto reaction for regular channel posts
         await handleAutoReaction(msg);
+        // Respond to the post with our unified AI chatbot
+        await handleGroupOrChannelChat(msg, true);
     }
 });
 
@@ -489,7 +662,8 @@ bot.on('message', async (msg) => {
 
         // Get group management settings
         const settings = db.data?.adminSettings?.groupManagement || {};
-        if (settings.blockChannelAccounts !== true) return;
+        // Enabled by default unless explicitly disabled
+        if (settings.blockChannelAccounts === false) return;
 
         // Check if the message is sent on behalf of a channel (sender_chat type channel)
         if (msg.sender_chat && msg.sender_chat.type === 'channel') {
@@ -539,6 +713,18 @@ bot.on('message', async (msg) => {
                     console.log(`[CHANNEL_BLOCK] Banned channel via direct API request`);
                 } catch (err) {
                     console.error(`[CHANNEL_BLOCK] Banned channel request failed: ${err.message}`);
+                }
+            }
+
+            // 3. Notify the group/livestream that a channel account was blocked
+            if (banned) {
+                const warnMsgText = `🚫 **Group Protection Activated**\n\nChannel accounts are not allowed to join or message in this group/live stream.\n\nBanned channel account: **${channelTitle}** ${channelUsername}`;
+                const warnMsg = await bot.sendMessage(chatId, warnMsgText, { parse_mode: 'Markdown' }).catch(() => {});
+                if (warnMsg && warnMsg.message_id) {
+                    // Auto-delete the warning after 10 seconds to keep the group tidy
+                    setTimeout(() => {
+                        bot.deleteMessage(chatId, warnMsg.message_id).catch(() => {});
+                    }, 10000);
                 }
             }
         }
@@ -1309,6 +1495,11 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const messageId = msg.message_id;
 
+    // Trigger auto-unmute schedule for active chatters
+    if (msg.from && !msg.from.is_bot) {
+        scheduleAutoUnmute(chatId, msg.from);
+    }
+
     // Get group management settings
     const settings = db.data?.adminSettings?.groupManagement || {};
 
@@ -1336,6 +1527,9 @@ bot.on('message', async (msg) => {
 
         for (const newMember of msg.new_chat_members) {
             if (newMember.is_bot) continue;
+
+            // Auto unmute the new member after 1 minute
+            scheduleAutoUnmute(chatId, newMember);
 
             if (welcomeEnabled) {
                 const memberName = newMember.first_name || 'New Member';
@@ -1441,6 +1635,11 @@ bot.on('message', async (msg) => {
 
     // Check for video chat participants invited
     if (msg.video_chat_participants_invited) {
+        if (msg.video_chat_participants_invited.users) {
+            for (const u of msg.video_chat_participants_invited.users) {
+                scheduleAutoUnmute(chatId, u);
+            }
+        }
         if (settings.deleteVideoChatParticipantsInvited !== false) { // Default true
             shouldDelete = true;
             deleteReason = 'video_chat_participants_invited';
@@ -2022,71 +2221,137 @@ bot.on('message', async (msg) => {
         }
     }
 });
-// Answer questions about the bot/services in the group
-bot.on('message', async (msg) => {
-    if (!msg.chat || !['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (!msg.text) return;
-    if (!msg.from || msg.from.is_bot) return;
+// ==================== AI CHATBOT (GROUP & CHANNEL RESPONDER) ====================
+async function getChatbotResponse(userInput, chatId, senderName = 'User') {
+    const apiKeys = db.data?.apiKeys || {};
+    const aiModerator = db.data?.adminSettings?.aiModerator || {};
+    const apiKey = process.env.OPENROUTER_API_KEY || apiKeys.openRouterKey || apiKeys.openrouterApiKey || aiModerator.apiKey;
+    
+    const systemPrompt = `You are "Auto Verify Bot", a helpful and friendly Telegram assistant. 
+You provide temporary emails, virtual cards, SMM services, and VPN accounts. 
+Respond to the user's message in their language (Bengali or English). Keep your response natural, conversational, polite, and brief (under 2-3 sentences). 
+If the user is asking about services, let them know they can start the bot in private chat to buy them.`;
 
-    // Skip channel posts and forwards — never respond to admin/channel automated messages
-    if (msg.sender_chat) return;
-    if (msg.forward_from_chat) return;
-
-    const text = msg.text.toLowerCase().trim();
-    const chatId = msg.chat.id;
-    const botUsername = db.data?.settings?.botUsername || 'AutosVerify_bot';
-
-    // Only respond to questions about the bot/services — check if enabled
-    const groupSettingsQA = db.data?.adminSettings?.groupManagement || {};
-    if (groupSettingsQA.autoRespond === false) return;
-
-    const botKeywords = ['bot', 'service', 'vpn', 'account', 'token', 'gem', 'deposit',
-        'price', 'cost', 'how', 'what', 'available', 'কিভাবে', 'কত', 'আছে', 'নাই', 'দাম'];
-    const isRelevantQuestion = botKeywords.some(kw => text.includes(kw)) &&
-        (text.includes('?') || text.includes('কি') || text.includes('কিভাবে') || text.includes('আছে'));
-
-    if (!isRelevantQuestion) return;
-
-    // Build service info
-    const services = db.data?.serviceItems || {};
-    const serviceList = Object.values(services).map(s => `• ${s.name}: ${s.price} Gems`).join('\n');
-
-    // Check if asking about a specific service
-    let reply = null;
-    const serviceNames = Object.values(services).map(s => s.name.toLowerCase());
-
-    for (const [key, svc] of Object.entries(services)) {
-        if (text.includes(svc.name.toLowerCase())) {
-            const stock = (db.data.cards && db.data.cards[key]) ? db.data.cards[key].length : 0;
-            reply = `📦 *${svc.name}*\n💰 Price: ${svc.price} Gems\n📊 Stock: ${stock > 0 ? `${stock} available` : 'Out of stock'}\n\nGet it in the bot below! 👇`;
-            break;
+    if (apiKey) {
+        try {
+            const axios = require('axios');
+            const isOpenRouter = apiKey.startsWith('sk-or-') || !apiKey.startsWith('sk-');
+            const apiBase = isOpenRouter ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+            const model = isOpenRouter ? 'google/gemini-2.5-flash' : 'gpt-4o-mini';
+            
+            const response = await axios.post(apiBase, {
+                model: model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userInput }
+                ],
+                max_tokens: 250,
+                temperature: 0.7
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://ai.studio/build',
+                    'X-Title': 'Auto Verify Bot'
+                },
+                timeout: 10000
+            });
+            
+            const content = response.data?.choices?.[0]?.message?.content;
+            if (content) return content.trim();
+        } catch (err) {
+            console.error('[AI CHAT] API call failed:', err.message);
         }
     }
 
-    if (!reply && isRelevantQuestion) {
-        reply = `📋 *Available Services*\n\n${serviceList || 'No services currently available'}\n\nFor all services and more, open the bot! 👇`;
+    // High quality Bengali / English rules fallback if API keys are missing/failing
+    const text = userInput.toLowerCase();
+    
+    if (text.includes('hi') || text.includes('hello') || text.includes('হ্যালো') || text.includes('হাই') || text.includes('সালাম')) {
+        return `আসসালামু আলাইকুম! আমি Auto Verify Bot। আমি আপনাকে কীভাবে সাহায্য করতে পারি? আপনার যদি কোনো সাহায্য লাগে, দয়া করে আমাকে জানান। 😊`;
+    }
+    if (text.includes('vpn') || text.includes('ভিপিএন')) {
+        return `আমাদের কাছে NordVPN, ExpressVPN, Surfshark সহ অনেক প্রিমিয়াম VPN অ্যাকাউন্ট রয়েছে। VPN কিনতে দয়া করে বটের ইনবক্সে /start লিখুন এবং VPN সেকশনে যান। 🛡️`;
+    }
+    if (text.includes('mail') || text.includes('email') || text.includes('ইমেইল') || text.includes('ইনবক্স')) {
+        return `আমাদের বোটে আপনি আনলিমিটেড টেম্পোরারি ইমেইল ও প্রিমিয়াম জিমেইল/হটমেইল পাবেন। সরাসরি বটের ইনবক্সে মেসেজ করে সার্ভিসগুলো ব্যবহার করুন! ✉️`;
+    }
+    if (text.includes('price') || text.includes('দাম') || text.includes('কত')) {
+        return `আমাদের সকল সার্ভিসের দাম এবং স্টক লাইভ দেখতে সরাসরি বটের ইনবক্সে প্রবেশ করে মেনু দেখুন। আমাদের দাম খুবই সাশ্রয়ী! 💰`;
+    }
+    if (text.includes('card') || text.includes('কার্ড')) {
+        return `আমরা প্রিমিয়াম ভার্চুয়াল কার্ড ও বিভিন্ন সাবস্ক্রিপশন দিয়ে থাকি। বিস্তারিত জানতে বটের ইনবক্সে ক্লিক করুন! 💳`;
+    }
+    if (text.includes('help') || text.includes('সাহায্য') || text.includes('কাজ')) {
+        return `আমি আপনাকে টেম্পোরারি ইমেইল, প্রিমিয়াম জিমেইল, ভার্চুয়াল কার্ড এবং ভিপিএন সার্ভিস দিয়ে সাহায্য করতে পারি। সরাসরি বটের প্রাইভেট চ্যাটে শুরু করতে নিচে ক্লিক করুন!`;
+    }
+    
+    const generalResponses = [
+        "জি ভাইয়া, আমি আপনার কথা শুনতে পাচ্ছি। আপনার কোনো নির্দিষ্ট সাহায্য লাগবে কি? 😊",
+        "আমি আপনার যেকোনো প্রশ্নের উত্তর দিতে প্রস্তুত! আপনি কী জানতে চান বলুন।",
+        "আমি একটি অটোমেটেড চ্যাট অ্যাসিস্ট্যান্ট। কোনো প্রিমিয়াম সার্ভিস কিনতে অনুগ্রহ করে বটের প্রাইভেট চ্যাটে জয়েন করুন!",
+        "ধন্যবাদ আপনার মেসেজের জন্য! অনুগ্রহ করে আপনার প্রশ্নটি আরও বিস্তারিতভাবে বলুন যেন আমি আপনাকে সঠিকভাবে সাহায্য করতে পারি।"
+    ];
+    return generalResponses[Math.floor(Math.random() * generalResponses.length)];
+}
+
+async function handleGroupOrChannelChat(msg, isChannel = false) {
+    if (!msg.chat) return;
+    if (!msg.text) return;
+    
+    // For groups: skip if bot sent it
+    if (!isChannel) {
+        if (!msg.from || msg.from.is_bot) return;
+        // Skip channel-linked posts or forwards to prevent infinite loops/duplicate processing
+        if (msg.sender_chat) return;
+        if (msg.forward_from_chat) return;
+    } else {
+        // For channels: skip system/service messages
+        if (msg.video_chat_started || msg.voice_chat_started || msg.video_chat_ended || msg.voice_chat_ended) return;
     }
 
-    if (!reply) return;
+    const text = msg.text.trim();
+    const chatId = msg.chat.id;
+    const botUsername = db.data?.settings?.botUsername || 'AutosVerify_bot';
+
+    // Get group management settings
+    const groupSettingsQA = db.data?.adminSettings?.groupManagement || {};
+    if (groupSettingsQA.autoRespond === false) return;
 
     try {
-        const autoReply = await bot.sendMessage(chatId, reply, {
-            parse_mode: 'Markdown',
-            reply_to_message_id: msg.message_id,
-            reply_markup: {
-                inline_keyboard: [[
-                    { text: '🚀 Open Bot', url: `https://t.me/${botUsername}?start=services` }
-                ]]
-            }
-        });
+        // Show typing indicator
+        bot.sendChatAction(chatId, 'typing').catch(() => {});
 
-        // Auto-delete after 30 seconds
-        setTimeout(async () => {
-            try { await bot.deleteMessage(chatId, autoReply.message_id); } catch (e) {}
-        }, 30000);
+        const senderName = isChannel ? 'Channel Subscriber' : (msg.from ? (msg.from.first_name || 'User') : 'User');
+        const replyText = await getChatbotResponse(text, chatId, senderName);
+
+        if (replyText) {
+            const autoReply = await bot.sendMessage(chatId, replyText, {
+                parse_mode: 'Markdown',
+                reply_to_message_id: msg.message_id,
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🚀 Open Bot', url: `https://t.me/${botUsername}` }
+                    ]]
+                }
+            });
+
+            // For groups, auto-delete after 45 seconds to keep chat clean
+            if (!isChannel) {
+                setTimeout(async () => {
+                    try { await bot.deleteMessage(chatId, autoReply.message_id); } catch (e) {}
+                }, 45000);
+            }
+        }
     } catch (e) {
-        console.log(`[GROUP QA] Error: ${e.message}`);
+        console.log(`[CHATBOT ERROR] ${e.message}`);
     }
+}
+
+// Answer questions and talk with AI in group
+bot.on('message', async (msg) => {
+    if (!msg.chat || !['group', 'supergroup'].includes(msg.chat.type)) return;
+    await handleGroupOrChannelChat(msg, false);
 });
 
 // ==================== CHAT JOIN REQUEST HANDLER ====================

@@ -4464,7 +4464,7 @@ app.get('/api/mail/inbox', async (req, res) => {
             }
         } else {
             const tempMail = require('../services/tempmail-providers');
-            messages = await tempMail.getMessages(session.token || sessionId, session.email, session.provider);
+            messages = await tempMail.getMessages(session.token || sessionId, session.email, session.provider, sessionId, session.password);
         }
 
         const formatted = (messages || []).map(m => ({
@@ -11696,12 +11696,20 @@ app.post('/api/video-downloader/info', async (req, res) => {
         // ── 1. cobalt.tools API (free, no key, direct download URLs) ──
         const tryCobalt = async (videoUrl) => {
             const endpoints = [
-                'https://api.cobalt.tools/',
-                'https://co.wuk.sh/api/json',
-                'https://cobalt.as93.net/'
+                'https://api.cobalt.tools/'
             ];
             
-            const payload = {
+            // Clean payload compatible with modern Cobalt v10 (Strict validation)
+            const cleanPayload = {
+                url: videoUrl,
+                videoQuality: '1080',
+                audioFormat: 'mp3',
+                audioBitrate: '128',
+                filenamePattern: 'classic'
+            };
+
+            // Legacy payload for older/mirrored Cobalt instances
+            const legacyPayload = {
                 url: videoUrl,
                 videoQuality: '1080',
                 vQuality: '1080',
@@ -11724,16 +11732,30 @@ app.post('/api/video-downloader/info', async (req, res) => {
             };
 
             for (const endpoint of endpoints) {
+                // Try clean v10 payload first
                 try {
-                    console.log(`[Video Downloader] Trying Cobalt endpoint: ${endpoint} for ${videoUrl}`);
-                    const res = await axios.post(endpoint, payload, { headers, timeout: 12000 });
+                    console.log(`[Video Downloader] Trying Cobalt v10 (clean payload) on: ${endpoint} for ${videoUrl}`);
+                    const res = await axios.post(endpoint, cleanPayload, { headers, timeout: 12000 });
                     const cd = res.data;
                     if (cd && (cd.url || (cd.picker && cd.picker.length > 0))) {
-                        console.log(`[Video Downloader] Cobalt success via ${endpoint}`);
+                        console.log(`[Video Downloader] Cobalt success via ${endpoint} (clean payload)`);
                         return cd;
                     }
                 } catch (err) {
-                    console.warn(`[Video Downloader] Cobalt endpoint ${endpoint} failed:`, err.message);
+                    console.warn(`[Video Downloader] Cobalt v10 payload failed on ${endpoint}:`, err.message);
+                    
+                    // Fall back to legacy payload
+                    try {
+                        console.log(`[Video Downloader] Trying Cobalt legacy payload on: ${endpoint} for ${videoUrl}`);
+                        const res = await axios.post(endpoint, legacyPayload, { headers, timeout: 12000 });
+                        const cd = res.data;
+                        if (cd && (cd.url || (cd.picker && cd.picker.length > 0))) {
+                            console.log(`[Video Downloader] Cobalt success via ${endpoint} (legacy payload)`);
+                            return cd;
+                        }
+                    } catch (errLegacy) {
+                        console.warn(`[Video Downloader] Cobalt legacy payload also failed on ${endpoint}:`, errLegacy.message);
+                    }
                 }
             }
             return null;
@@ -11867,91 +11889,184 @@ app.post('/api/video-downloader/info', async (req, res) => {
             }
         }
 
-        // ── 4. YouTube — get metadata via oembed, allow Thumbnail/SEO/Copyright ────────
+        // ── 4. YouTube — get metadata via yt-dlp, allow full direct/proxy downloads ────────
         if (platform === 'youtube') {
-            const ytId = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1];
-            const thumbnail = ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : '';
-            let title = 'YouTube Video';
-            let author = '';
-            try {
-                const oembed = await axios.get(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`, { timeout: 5000 });
-                if (oembed.data) {
-                    title = oembed.data.title || title;
-                    author = oembed.data.author_name || '';
-                }
-            } catch (e) {}
-
-            // Try Y2Mate integration
-            try {
-                const params = new URLSearchParams();
-                params.append('k_query', url);
-                params.append('k_page', 'home');
-                params.append('hl', 'en');
-                params.append('q_auto', '1');
-
-                const y2Headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            const ytId = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1] || null;
+            if (ytId) {
+                // Try fetching metadata and streams via a public Piped API instance first (avoids Google Cloud IP blocks!)
+                const getYouTubeInfoFromPiped = async (videoId) => {
+                    const pipedInstances = [
+                        'https://pipedapi.kavin.rocks',
+                        'https://api.piped.yt',
+                        'https://pipedapi.lunar.icu',
+                        'https://pipedapi.tokhmi.xyz',
+                        'https://pipedapi.leptons.xyz',
+                        'https://piped-api.garudalinux.org',
+                        'https://piped-api.us.to'
+                    ];
+                    for (const api of pipedInstances) {
+                        try {
+                            console.log(`[Video Downloader] Trying Piped instance: ${api}/streams/${videoId}`);
+                            const res = await axios.get(`${api}/streams/${videoId}`, { timeout: 8000 });
+                            if (res.data && res.data.title) {
+                                console.log(`[Video Downloader] Piped success via ${api}`);
+                                return res.data;
+                            }
+                        } catch (err) {
+                            console.warn(`[Video Downloader] Piped instance ${api} failed:`, err.message);
+                        }
+                    }
+                    return null;
                 };
 
-                console.log(`[Video Downloader] Querying Y2Mate for YouTube: ${url}`);
-                const y2Res = await axios.post('https://www.y2mate.com/mates/analyzeV2/ajax', params.toString(), { headers: y2Headers, timeout: 10000 });
-                
-                if (y2Res.data && y2Res.data.status === 'ok' && y2Res.data.links) {
-                    const formats = [];
-                    const vid = y2Res.data.vid;
+                try {
+                    const pipedData = await getYouTubeInfoFromPiped(ytId);
+                    if (pipedData) {
+                        const title = pipedData.title || 'YouTube Video';
+                        const thumbnail = pipedData.thumbnailUrl || `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`;
+                        const description = pipedData.description || '';
+                        
+                        const formats = [];
+                        
+                        // Add direct combined streams
+                        const combined = (pipedData.videoStreams || []).filter(s => s.videoOnly === false);
+                        combined.forEach((f) => {
+                            const q = f.quality || '720p';
+                            formats.push({
+                                quality: `${q} - Direct Stream (${f.format || 'MP4'})`,
+                                url: `${req.protocol}://${req.get('host')}/api/video-downloader/download-stream?url=${encodeURIComponent(f.url)}&title=${encodeURIComponent(title)}&ext=${(f.format || 'mp4').toLowerCase()}`,
+                                type: 'mp4'
+                            });
+                        });
 
-                    // Parse mp4 links
-                    if (y2Res.data.links.mp4) {
-                        for (const [key, val] of Object.entries(y2Res.data.links.mp4)) {
-                            if (val && val.k) {
+                        // Add high resolution video-only streams (often 1080p etc.)
+                        const videoOnly = (pipedData.videoStreams || []).filter(s => s.videoOnly === true);
+                        videoOnly.forEach((f, i) => {
+                            if (i < 3) {
+                                const q = f.quality || '1080p';
                                 formats.push({
-                                    quality: `${val.q_text || val.q || 'MP4'} (${val.size || 'Unknown size'})`,
-                                    url: `${req.protocol}://${req.get('host')}/api/video-downloader/y2mate-dl?vid=${encodeURIComponent(vid)}&k=${encodeURIComponent(val.k)}`,
+                                    quality: `${q} - Video Only (${f.format || 'MP4'})`,
+                                    url: `${req.protocol}://${req.get('host')}/api/video-downloader/download-stream?url=${encodeURIComponent(f.url)}&title=${encodeURIComponent(title)}&ext=${(f.format || 'mp4').toLowerCase()}`,
                                     type: 'mp4'
                                 });
                             }
-                        }
-                    }
+                        });
 
-                    // Parse mp3 links
-                    if (y2Res.data.links.mp3) {
-                        for (const [key, val] of Object.entries(y2Res.data.links.mp3)) {
-                            if (val && val.k) {
-                                formats.push({
-                                    quality: `Audio MP3 ${val.q_text || val.q || '128kbps'} (${val.size || 'Unknown size'})`,
-                                    url: `${req.protocol}://${req.get('host')}/api/video-downloader/y2mate-dl?vid=${encodeURIComponent(vid)}&k=${encodeURIComponent(val.k)}`,
-                                    type: 'audio'
-                                });
-                            }
-                        }
-                    }
+                        // Add high quality audio streams
+                        const audio = pipedData.audioStreams || [];
+                        const addedBitrates = new Set();
+                        audio.forEach((f) => {
+                            const ext = (f.format || 'M4A').toLowerCase() === 'webm' ? 'webm' : 'm4a';
+                            const key = `${ext}_${f.bitrate}`;
+                            if (addedBitrates.has(key)) return;
+                            addedBitrates.add(key);
+                            
+                            const kbps = f.bitrate ? `${f.bitrate}kbps` : '128kbps';
+                            formats.push({
+                                quality: `Audio MP3 / ${ext.toUpperCase()} - ${kbps}`,
+                                url: `${req.protocol}://${req.get('host')}/api/video-downloader/download-stream?url=${encodeURIComponent(f.url)}&title=${encodeURIComponent(title)}&ext=${ext}&is_audio=true`,
+                                type: 'audio'
+                            });
+                        });
 
-                    if (formats.length > 0) {
                         return res.json({
                             success: true,
-                            title: y2Res.data.title || title,
-                            thumbnail: y2Res.data.vid ? `https://i.ytimg.com/vi/${y2Res.data.vid}/0.jpg` : thumbnail,
-                            description: y2Res.data.a ? `Uploaded by ${y2Res.data.a}.` : (author ? `Uploaded by ${author}.` : ''),
+                            title,
+                            thumbnail,
+                            description,
                             platform: 'youtube',
-                            formats: formats
+                            formats: formats,
+                            downloadUrl: formats[0]?.url || ''
                         });
                     }
+                } catch (pipedErr) {
+                    console.error('[Piped Extractor Error]', pipedErr.message);
                 }
-            } catch (y2Err) {
-                console.warn('[Video Downloader] Y2Mate analyze failed:', y2Err.message);
             }
 
-            return res.json({
-                success: true,
-                title,
-                thumbnail,
-                description: author ? `Uploaded by ${author}.` : '',
-                platform: 'youtube',
-                formats: [],
-                message: 'Direct YouTube video download is currently unavailable, but you can download the Thumbnail, view Video Details, check Copyright risk, and generate optimized SEO below!'
+            const { execFile } = require('child_process');
+            
+            console.log(`[Video Downloader] Extracting via yt-dlp: ${url}`);
+            execFile('./yt-dlp', ['--js-runtimes', 'node', '-j', url], { maxBuffer: 10 * 1024 * 1024, timeout: 20000 }, async (error, stdout, stderr) => {
+                if (error) {
+                    console.error('[yt-dlp info error]', error.message, stderr);
+                    const ytId = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1];
+                    const thumbnail = ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : '';
+                    return res.json({
+                        success: true,
+                        title: 'YouTube Video',
+                        thumbnail,
+                        description: '',
+                        platform: 'youtube',
+                        formats: [],
+                        message: 'Direct YouTube video download is currently unavailable. Error: ' + error.message
+                    });
+                }
+
+                try {
+                    const info = JSON.parse(stdout);
+                    const title = info.title || 'YouTube Video';
+                    const thumbnail = info.thumbnail || (info.id ? `https://img.youtube.com/vi/${info.id}/maxresdefault.jpg` : '');
+                    const description = info.description || '';
+                    
+                    const formats = [];
+                    
+                    // 1. High Quality Merged video (if duration is under 30 minutes)
+                    if (info.duration && info.duration < 1800) {
+                        formats.push({
+                            quality: `🔥 Best Quality 1080p/720p (Merged Video + Audio)`,
+                            url: `${req.protocol}://${req.get('host')}/api/video-downloader/download-merged?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`,
+                            type: 'mp4'
+                        });
+                    }
+
+                    // 2. Combined pre-merged streams (usually 720p and 360p)
+                    const combinedFormats = (info.formats || []).filter(f => f.vcodec !== 'none' && f.acodec !== 'none' && f.url);
+                    combinedFormats.forEach(f => {
+                        const q = f.height ? `${f.height}p` : 'MP4';
+                        const sizeStr = f.filesize ? ` (${(f.filesize / (1024 * 1024)).toFixed(1)} MB)` : '';
+                        formats.push({
+                            quality: `${q} - Direct Stream${sizeStr}`,
+                            url: `${req.protocol}://${req.get('host')}/api/video-downloader/download-stream?url=${encodeURIComponent(f.url)}&title=${encodeURIComponent(title)}&ext=${f.ext || 'mp4'}`,
+                            type: 'mp4'
+                        });
+                    });
+
+                    // 3. Audio-only formats
+                    const audioFormats = (info.formats || []).filter(f => f.vcodec === 'none' && f.acodec !== 'none' && f.url);
+                    audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0));
+                    const addedExts = new Set();
+                    audioFormats.forEach(f => {
+                        const ext = f.ext === 'm4a' ? 'm4a' : 'mp3';
+                        if (addedExts.has(ext)) return;
+                        addedExts.add(ext);
+                        
+                        const sizeStr = f.filesize ? ` (${(f.filesize / (1024 * 1024)).toFixed(1)} MB)` : '';
+                        formats.push({
+                            quality: `Audio MP3 / ${ext.toUpperCase()} - ${f.abr || 128}kbps${sizeStr}`,
+                            url: `${req.protocol}://${req.get('host')}/api/video-downloader/download-stream?url=${encodeURIComponent(f.url)}&title=${encodeURIComponent(title)}&ext=${ext}&is_audio=true`,
+                            type: 'audio'
+                        });
+                    });
+
+                    return res.json({
+                        success: true,
+                        title,
+                        thumbnail,
+                        description,
+                        platform: 'youtube',
+                        formats: formats
+                    });
+
+                } catch (parseErr) {
+                    console.error('[yt-dlp JSON parse error]', parseErr.message);
+                    return res.json({
+                        success: false,
+                        message: 'Failed to parse YouTube video details.'
+                    });
+                }
             });
+            return; // Exit out of info endpoint
         }
 
         // ── 5. Fallback ─────────────────────────────────────────────────
@@ -11968,37 +12083,85 @@ app.post('/api/video-downloader/info', async (req, res) => {
     }
 });
 
-// Y2Mate Proxy/Redirect Downloader Endpoint
-app.get('/api/video-downloader/y2mate-dl', async (req, res) => {
-    const { vid, k } = req.query;
-    if (!vid || !k) {
-        return res.status(400).send('vid and k are required');
-    }
+// Direct/Proxy YouTube Stream Downloader Endpoint
+app.get('/api/video-downloader/download-stream', async (req, res) => {
+    const { url, title, ext, is_audio } = req.query;
+    if (!url) return res.status(400).send('url is required');
 
     try {
-        const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-        };
+        const cleanTitle = (title || 'video').replace(/[^a-zA-Z0-9-_ ]/g, '_');
+        const extension = ext || (is_audio === 'true' ? 'mp3' : 'mp4');
+        const contentType = is_audio === 'true' ? 'audio/mpeg' : 'video/mp4';
 
-        const convertParams = new URLSearchParams();
-        convertParams.append('vid', vid);
-        convertParams.append('k', k);
+        res.setHeader('Content-Disposition', `attachment; filename="${cleanTitle}.${extension}"`);
+        res.setHeader('Content-Type', contentType);
 
-        console.log(`[Y2Mate DL] Converting vid: ${vid}, k: ${k}`);
-        const convertRes = await axios.post('https://www.y2mate.com/mates/convertV2/index', convertParams.toString(), { headers, timeout: 15000 });
-        
-        if (convertRes.data && convertRes.data.status === 'ok' && convertRes.data.dlink) {
-            console.log(`[Y2Mate DL] Redirection success to: ${convertRes.data.dlink}`);
-            return res.redirect(convertRes.data.dlink);
-        } else {
-            console.error('[Y2Mate DL] Failed to convert. Response:', convertRes.data);
-            return res.status(500).send('Failed to generate download link from Y2Mate. Please try again.');
-        }
+        console.log(`[Stream Downloader] Streaming URL to client: ${url}`);
+        const response = await axios({
+            method: 'get',
+            url: url,
+            responseType: 'stream',
+            timeout: 120000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+
+        response.data.pipe(res);
     } catch (err) {
-        console.error('[Y2Mate DL] Error during conversion:', err.message);
-        return res.status(500).send('Internal error during Y2Mate conversion: ' + err.message);
+        console.error('[Stream Downloader Error]', err.message);
+        if (!res.headersSent) {
+            res.status(500).send('Failed to stream content: ' + err.message);
+        }
+    }
+});
+
+// Server-side High-Quality Merged Downloader Endpoint (1080p/720p)
+app.get('/api/video-downloader/download-merged', async (req, res) => {
+    const { url, title } = req.query;
+    if (!url) return res.status(400).send('url is required');
+
+    const cleanTitle = (title || 'video').replace(/[^a-zA-Z0-9-_ ]/g, '_');
+    const outId = 'merged_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const outPath = path.join('/tmp', `${outId}.mp4`);
+
+    try {
+        console.log(`[Merged Downloader] Starting yt-dlp merge for url: ${url}`);
+        const { execFile } = require('child_process');
+        
+        execFile('./yt-dlp', [
+            '--js-runtimes', 'node',
+            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
+            '--merge-output-format', 'mp4',
+            '-o', outPath,
+            url
+        ], { timeout: 120000 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error('[Merged Downloader Error]', error.message, stderr);
+                return res.status(500).send('Failed to merge and download video: ' + error.message);
+            }
+
+            if (!fs.existsSync(outPath)) {
+                console.error('[Merged Downloader Error] File not found after merge:', outPath);
+                return res.status(500).send('Failed to locate merged file.');
+            }
+
+            console.log(`[Merged Downloader] Sending merged file to client: ${outPath}`);
+            res.download(outPath, `${cleanTitle}.mp4`, (err) => {
+                try {
+                    if (fs.existsSync(outPath)) {
+                        fs.unlinkSync(outPath);
+                        console.log(`[Merged Downloader] Cleaned up temp file: ${outPath}`);
+                    }
+                } catch (unlinkErr) {
+                    console.error('[Merged Downloader] Failed to unlink temp file:', unlinkErr.message);
+                }
+            });
+        });
+
+    } catch (err) {
+        console.error('[Merged Downloader Outer Error]', err.message);
+        res.status(500).send('Internal error during merge: ' + err.message);
     }
 });
 
@@ -12930,19 +13093,56 @@ app.post('/api/video-downloader/send-telegram', async (req, res) => {
         tempFilePath = path.join(tmpDir, `vdl_${userId}_${Date.now()}.${ext}`);
 
         let downloadSuccess = false;
+        let targetUrl = url;
+        let isMergedYoutube = false;
+
+        // Extract original parameters if it's a proxy link
+        if (url.includes('/api/video-downloader/download-merged')) {
+            isMergedYoutube = true;
+            try {
+                const parsedUrl = new URL(url);
+                targetUrl = parsedUrl.searchParams.get('url') || url;
+            } catch (e) {
+                const match = url.match(/url=([^&]+)/);
+                if (match) targetUrl = decodeURIComponent(match[1]);
+            }
+        } else if (url.includes('/api/video-downloader/download-stream')) {
+            try {
+                const parsedUrl = new URL(url);
+                targetUrl = parsedUrl.searchParams.get('url') || url;
+            } catch (e) {
+                const match = url.match(/url=([^&]+)/);
+                if (match) targetUrl = decodeURIComponent(match[1]);
+            }
+        }
+
         try {
-            const dlRes = await axios.get(url, {
-                responseType: 'arraybuffer',
-                timeout: 120000, // 2 min
-                maxContentLength: 50 * 1024 * 1024, // 50MB max
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Referer': 'https://www.google.com/',
-                    'Accept': '*/*'
-                }
-            });
-            fs.writeFileSync(tempFilePath, dlRes.data);
-            downloadSuccess = fs.existsSync(tempFilePath) && fs.statSync(tempFilePath).size > 1024;
+            if (isMergedYoutube) {
+                console.log(`[VideoDL] Direct yt-dlp merge for Telegram: ${targetUrl}`);
+                const { execFileSync } = require('child_process');
+                execFileSync('./yt-dlp', [
+                    '--js-runtimes', 'node',
+                    '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
+                    '--merge-output-format', 'mp4',
+                    '-o', tempFilePath,
+                    targetUrl
+                ], { timeout: 120000 });
+                downloadSuccess = fs.existsSync(tempFilePath) && fs.statSync(tempFilePath).size > 1024;
+            } else {
+                console.log(`[VideoDL] Downloading standard format: ${targetUrl}`);
+                const dlRes = await axios.get(targetUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 120000, // 2 min
+                    maxContentLength: 100 * 1024 * 1024, // 100MB max
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Referer': 'https://www.google.com/',
+                        'Accept': '*/*'
+                    }
+                });
+                fs.writeFileSync(tempFilePath, dlRes.data);
+                downloadSuccess = fs.existsSync(tempFilePath) && fs.statSync(tempFilePath).size > 1024;
+            }
         } catch (dlErr) {
             console.warn('[VideoDL] Server download failed:', dlErr.message);
         }
@@ -13165,6 +13365,8 @@ app.post('/api/video-downloader/copyright', async (req, res) => {
         const ai = getOpenAI();
         let scanResult = null;
 
+        const isTikTokVideo = (url || '').toLowerCase().includes('tiktok') || (title || '').toLowerCase().includes('tiktok') || (description || '').toLowerCase().includes('tiktok');
+
         if (ai) {
             try {
                 const completion = await ai.chat.completions.create({
@@ -13174,11 +13376,17 @@ app.post('/api/video-downloader/copyright', async (req, res) => {
                             role: "system",
                             content: `You are an advanced digital copyright auditor, specialist in DMCA, YouTube Content ID, TikTok Commercial Music Library rules, Facebook Rights Manager, and Instagram Reels audio copyright policies.
                             Analyze the given video metadata (Title, Description, URL) to perform a highly rigorous, realistic, and completely real copyright risk evaluation.
-                            Consider:
-                            - Presence of famous song titles, artists, record labels, or movie references in the title/description.
-                            - Likelihood of a Content ID claim, monetization block, sound muting, or regional restrictions.
-                            - Specific guidelines and policies for YouTube, TikTok, Facebook, and Instagram.
                             
+                            CRITICAL RULE FOR TIKTOK VIDEOS:
+                            TikTok pays massive licensing fees for music, allowing users to use popular songs inside the TikTok app legally (status for TikTok is often green/safe). 
+                            However, these licensing rights DO NOT TRANSFER to other platforms.
+                            If a user downloads a TikTok video and uploads it to Facebook/Instagram (Meta Rights Manager) or YouTube (Content ID), the audio will ALMOST ALWAYS be flagged, muted, or copyright-claimed, resulting in page strikes or monetization blocks.
+                            Therefore, if the source is TikTok (URL contains tiktok or metadata suggests TikTok) and any audio/song/background music is present:
+                            - "facebook" status MUST be true (high risk).
+                            - "youtube" status MUST be true (high risk).
+                            - "instagram" status MUST be true (high risk).
+                            - You must explicitly explain this TikTok platform-licensing mismatch in the explanations so the user understands why Facebook flags it despite TikTok being fine.
+
                             Provide clear, accurate, and comprehensive explanations in English.
                             Return ONLY a valid JSON object matching this schema exactly:
                             {
@@ -13214,29 +13422,34 @@ app.post('/api/video-downloader/copyright', async (req, res) => {
         }
 
         if (!scanResult) {
-            const hasMusic = (title || '').toLowerCase().includes('song') || (title || '').toLowerCase().includes('music') || (title || '').toLowerCase().includes('cover') || (title || '').toLowerCase().includes('remix');
+            const hasMusic = (title || '').toLowerCase().includes('song') || (title || '').toLowerCase().includes('music') || (title || '').toLowerCase().includes('cover') || (title || '').toLowerCase().includes('remix') || isTikTokVideo;
+            
             scanResult = {
                 youtube: {
                     status: hasMusic,
-                    explanation: hasMusic 
-                        ? 'Detected potential copyrighted audio/music references. Likely to trigger a YouTube Content ID claim or revenue sharing.' 
-                        : 'No direct copyrighted audio or video match detected. Safe from automated Content ID claims.'
+                    explanation: isTikTokVideo 
+                        ? 'High Risk: TikTok video background music licenses do NOT transfer to YouTube. Uploading this to YouTube is extremely likely to trigger a Content ID claim.'
+                        : (hasMusic 
+                            ? 'Detected potential copyrighted audio/music references. Likely to trigger a YouTube Content ID claim or revenue sharing.' 
+                            : 'No direct copyrighted audio or video match detected. Safe from automated Content ID claims.')
                 },
                 tiktok: {
-                    status: hasMusic,
-                    explanation: hasMusic
-                        ? 'Music matching detected. Non-commercially licensed tracks may lead to the background audio being automatically muted.'
-                        : 'No standard commercial music library conflicts detected. Safe to upload.'
+                    status: false,
+                    explanation: 'TikTok native upload: Music used natively inside the TikTok app is covered by TikTok\'s own licensing agreements and is safe within the platform.'
                 },
                 facebook: {
                     status: hasMusic,
-                    explanation: hasMusic
-                        ? 'Facebook Rights Manager match found. Video may experience regional blocks or be restricted from monetization.'
-                        : 'No matching fingerprints found on Facebook Rights Manager.'
+                    explanation: isTikTokVideo
+                        ? 'CRITICAL RISK: Meta Rights Manager is extremely aggressive. TikTok’s exclusive commercial music agreements do NOT cover Facebook. Uploading this TikTok video with background music/sounds to Facebook will almost certainly trigger an automatic mute, regional block, or copyright strike.'
+                        : (hasMusic
+                            ? 'Facebook Rights Manager match found. Video may experience regional blocks or be restricted from monetization.'
+                            : 'No matching fingerprints found on Facebook Rights Manager.')
                 },
                 instagram: {
-                    status: false,
-                    explanation: 'Instagram Reels policy: No audio matching or copyright restrictions found.'
+                    status: hasMusic,
+                    explanation: isTikTokVideo
+                        ? 'High Risk: Instagram Reels automated Rights Manager will flag this track. TikTok music licenses are completely separate and do not carry over to Instagram.'
+                        : 'Instagram Reels policy: No immediate audio matching or copyright restrictions found.'
                 }
             };
         }

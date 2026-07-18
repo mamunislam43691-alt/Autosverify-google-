@@ -159,7 +159,19 @@ async function fetchMailTmMessages(token) {
             timeout: 10000
         });
 
-        const messages = res.data?.['hydra:member'] || [];
+        // Robust member list parsing
+        let messages = [];
+        if (res.data) {
+            if (Array.isArray(res.data)) {
+                messages = res.data;
+            } else if (res.data['hydra:member'] && Array.isArray(res.data['hydra:member'])) {
+                messages = res.data['hydra:member'];
+            } else if (res.data.member && Array.isArray(res.data.member)) {
+                messages = res.data.member;
+            } else if (res.data.data && Array.isArray(res.data.data)) {
+                messages = res.data.data;
+            }
+        }
         const result = [];
 
         for (const msg of messages) {
@@ -192,6 +204,9 @@ async function fetchMailTmMessages(token) {
         }
         return result;
     } catch (e) {
+        if (e.response && e.response.status === 401) {
+            throw new Error('UNAUTHORIZED_TOKEN');
+        }
         return [];
     }
 }
@@ -320,7 +335,19 @@ async function fetchMailGwMessages(token) {
             timeout: 10000
         });
 
-        const messages = res.data?.['hydra:member'] || [];
+        // Robust member list parsing
+        let messages = [];
+        if (res.data) {
+            if (Array.isArray(res.data)) {
+                messages = res.data;
+            } else if (res.data['hydra:member'] && Array.isArray(res.data['hydra:member'])) {
+                messages = res.data['hydra:member'];
+            } else if (res.data.member && Array.isArray(res.data.member)) {
+                messages = res.data.member;
+            } else if (res.data.data && Array.isArray(res.data.data)) {
+                messages = res.data.data;
+            }
+        }
         const result = [];
 
         for (const msg of messages) {
@@ -352,6 +379,9 @@ async function fetchMailGwMessages(token) {
         }
         return result;
     } catch (e) {
+        if (e.response && e.response.status === 401) {
+            throw new Error('UNAUTHORIZED_TOKEN');
+        }
         return [];
     }
 }
@@ -388,20 +418,45 @@ async function fetchGuerrillaMessages(token) {
         );
         if (!res.data?.list) return [];
 
-        return res.data.list.map(msg => {
-            const body = msg.mail_body || msg.mail_excerpt || '';
-            const subject = msg.mail_subject || '(No Subject)';
-            const extracted = otpExtractor.extractOTP(body, subject);
-            return {
-                id: msg.mail_id,
-                from: msg.mail_from || 'Unknown',
-                subject,
-                body,
-                otp: extracted ? extracted.otp : null,
-                date: new Date(parseInt(msg.mail_timestamp) * 1000).toISOString(),
-                snippet: body.substring(0, 100)
-            };
-        });
+        const result = [];
+        for (const msg of res.data.list.slice(0, 10)) {
+            try {
+                // Fetch full mail content
+                const fullRes = await axios.get(
+                    `https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id=${msg.mail_id}&sid_token=${token}`,
+                    { timeout: 10000 }
+                );
+                const full = fullRes.data;
+                const body = full?.mail_body || msg.mail_body || msg.mail_excerpt || '';
+                const subject = full?.mail_subject || msg.mail_subject || '(No Subject)';
+                const extracted = otpExtractor.extractOTP(body, subject);
+                
+                result.push({
+                    id: msg.mail_id,
+                    from: full?.mail_from || msg.mail_from || 'Unknown',
+                    subject,
+                    body,
+                    otp: extracted ? extracted.otp : null,
+                    date: msg.mail_timestamp ? new Date(parseInt(msg.mail_timestamp) * 1000).toISOString() : new Date().toISOString(),
+                    snippet: (full?.mail_excerpt || body || '').substring(0, 100)
+                });
+            } catch (err) {
+                // fallback to basic list info if fetch_email fails
+                const body = msg.mail_body || msg.mail_excerpt || '';
+                const subject = msg.mail_subject || '(No Subject)';
+                const extracted = otpExtractor.extractOTP(body, subject);
+                result.push({
+                    id: msg.mail_id,
+                    from: msg.mail_from || 'Unknown',
+                    subject,
+                    body,
+                    otp: extracted ? extracted.otp : null,
+                    date: msg.mail_timestamp ? new Date(parseInt(msg.mail_timestamp) * 1000).toISOString() : new Date().toISOString(),
+                    snippet: body.substring(0, 100)
+                });
+            }
+        }
+        return result;
     } catch (e) {
         return [];
     }
@@ -529,9 +584,6 @@ async function createAccount() {
     // Dynamic, Fair Round-Robin Free Providers List (Filtered to only stable and unblocked APIs)
     const FREE_PROVIDERS = [
         { name: 'mail.tm', fn: tryMailTm },
-        { name: '1secmail', fn: try1SecMail },
-        { name: 'mail.gw', fn: tryMailGw },
-        { name: 'dropmail', fn: tryDropMail },
         { name: 'guerrilla', fn: tryGuerrilla }
     ];
 
@@ -565,22 +617,75 @@ async function createAccount() {
         return account;
     }
 
-    // Fallbacks
-    console.log('  → Trying Yopmail (last resort fallback)...');
-    account = await tryYopmail();
-    if (account) {
-        console.log('✅ Yopmail provided email:', account.email);
-        return account;
-    }
-
-    console.log('  → Trying Mailinator (absolute last resort fallback)...');
-    account = await tryMailinator();
-    if (account) {
-        console.log('✅ Mailinator provided email:', account.email);
-        return account;
-    }
+    // Try a second pass on the highly stable ones to recover from transient failures
+    console.log('🔄 Secondary pass on Mail.tm and Guerrilla to recover transient network issues...');
+    try {
+        account = await tryMailTm();
+        if (account) return account;
+    } catch (e) {}
+    try {
+        account = await tryGuerrilla();
+        if (account) return account;
+    } catch (e) {}
 
     console.error('❌ All temp mail providers failed');
+    return null;
+}
+
+// ==========================================
+// TOKEN REFRESH HELPERS (for Mail.tm and Mail.gw)
+// ==========================================
+async function refreshMailTmToken(email, password, sessionId) {
+    try {
+        console.log(`[Mail.tm] Attempting to refresh token for ${email}...`);
+        const tokenRes = await axios.post('https://api.mail.tm/token', {
+            address: email,
+            password: password
+        }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 10000
+        });
+        if (tokenRes.data?.token) {
+            const newToken = tokenRes.data.token;
+            console.log(`[Mail.tm] Token refresh successful for ${email}`);
+            
+            const db = require('../db');
+            if (db.data && db.data.mailSessions && db.data.mailSessions[sessionId]) {
+                db.data.mailSessions[sessionId].token = newToken;
+                db.save();
+            }
+            return newToken;
+        }
+    } catch (err) {
+        console.error(`[Mail.tm] Token refresh failed for ${email}:`, err.message);
+    }
+    return null;
+}
+
+async function refreshMailGwToken(email, password, sessionId) {
+    try {
+        console.log(`[Mail.gw] Attempting to refresh token for ${email}...`);
+        const tokenRes = await axios.post('https://api.mail.gw/token', {
+            address: email,
+            password: password
+        }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 10000
+        });
+        if (tokenRes.data?.token) {
+            const newToken = tokenRes.data.token;
+            console.log(`[Mail.gw] Token refresh successful for ${email}`);
+            
+            const db = require('../db');
+            if (db.data && db.data.mailSessions && db.data.mailSessions[sessionId]) {
+                db.data.mailSessions[sessionId].token = newToken;
+                db.save();
+            }
+            return newToken;
+        }
+    } catch (err) {
+        console.error(`[Mail.gw] Token refresh failed for ${email}:`, err.message);
+    }
     return null;
 }
 
@@ -588,7 +693,7 @@ async function createAccount() {
 // MAIN MESSAGE FETCHER
 // Routes to correct provider based on session
 // ==========================================
-async function getMessages(token, email, provider) {
+async function getMessages(token, email, provider, sessionId = null, password = null) {
     if (!token && !email) return [];
 
     const p = provider || '';
@@ -600,7 +705,21 @@ async function getMessages(token, email, provider) {
 
     // Mail.tm
     if (p === 'mail.tm') {
-        return await fetchMailTmMessages(token);
+        try {
+            return await fetchMailTmMessages(token);
+        } catch (err) {
+            if (err.message === 'UNAUTHORIZED_TOKEN' && email && password && sessionId) {
+                const newToken = await refreshMailTmToken(email, password, sessionId);
+                if (newToken) {
+                    try {
+                        return await fetchMailTmMessages(newToken);
+                    } catch (retryErr) {
+                        return [];
+                    }
+                }
+            }
+            return [];
+        }
     }
 
     // 1SecMail
@@ -610,7 +729,21 @@ async function getMessages(token, email, provider) {
 
     // Mail.gw
     if (p === 'mail.gw') {
-        return await fetchMailGwMessages(token);
+        try {
+            return await fetchMailGwMessages(token);
+        } catch (err) {
+            if (err.message === 'UNAUTHORIZED_TOKEN' && email && password && sessionId) {
+                const newToken = await refreshMailGwToken(email, password, sessionId);
+                if (newToken) {
+                    try {
+                        return await fetchMailGwMessages(newToken);
+                    } catch (retryErr) {
+                        return [];
+                    }
+                }
+            }
+            return [];
+        }
     }
 
     // GuerrillaMail
@@ -636,7 +769,21 @@ async function getMessages(token, email, provider) {
 
     // Looks like a JWT/bearer token → try Mail.tm
     if (token && token.length > 20) {
-        return await fetchMailTmMessages(token);
+        try {
+            return await fetchMailTmMessages(token);
+        } catch (err) {
+            if (err.message === 'UNAUTHORIZED_TOKEN' && email && password && sessionId) {
+                const newToken = await refreshMailTmToken(email, password, sessionId);
+                if (newToken) {
+                    try {
+                        return await fetchMailTmMessages(newToken);
+                    } catch (retryErr) {
+                        return [];
+                    }
+                }
+            }
+            return [];
+        }
     }
 
     return [];
