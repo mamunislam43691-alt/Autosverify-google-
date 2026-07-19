@@ -409,6 +409,12 @@ async function broadcastLiveStreamStart(chatId, chatTitle, joinLink) {
         }
         lastLiveStreamBroadcast.set(chatId, now);
 
+        const groupSettings = db.data?.adminSettings?.groupManagement || {};
+        if (groupSettings.enableLiveStreamAlerts === false) {
+            console.log(`[LIVESTREAM] Broadcast alerts are disabled in Group Management settings. Skipping alert broadcast.`);
+            return;
+        }
+
         const users = db.getUsers();
         const apiKeys = db.data?.apiKeys || {};
         const settings = db.data?.settings || {};
@@ -743,6 +749,14 @@ function isAdmin(userId) {
     }
     
     return false;
+}
+
+// Helper: Check if userbot is fully enabled and configured
+function isUserbotConfigured() {
+    const settings = db.data?.adminSettings?.groupManagement || {};
+    return settings.userbotEnabled === true && 
+           typeof settings.userbotSessionString === 'string' && 
+           settings.userbotSessionString.trim().length > 0;
 }
 
 // ✅ NEW: Check if user is main admin (not helper)
@@ -1277,8 +1291,8 @@ bot.onText(/\/admin/, async (msg) => {
 
     // Check if user is admin
     if (!isAdmin(userId)) {
-        // Send response to non-admins
-        return bot.sendMessage(chatId, "⚠️ *Admin Access Only*\n\nThis command is restricted to administrators only.", { parse_mode: 'Markdown' });
+        // Silently ignore non-admins - do not reply to their comments/commands
+        return;
     }
 
     const publicUrl = (process.env.PUBLIC_URL || `http://localhost:3000`).trim();
@@ -1308,6 +1322,216 @@ bot.onText(/\/admin/, async (msg) => {
     } catch (e) {
         console.error('Error sending admin panel:', e);
         bot.sendMessage(chatId, "❌ Error opening admin panel. Please try again.");
+    }
+});
+
+// --- ADMIN SESSION & LIVE AUDIO STREAMING CONTROL ---
+const presetSongs = [
+    { name: 'Islamic Nasheed (ইসলামিক গজল)', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+    { name: 'Lofi Beats Chill (লোফি মিউজিক)', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
+    { name: 'Relaxing Ambient Stream', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
+    { name: 'Upbeat BG Track (ব্যাকগ্রাউন্ড)', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' }
+];
+
+async function sendAdminSessionMenu(chatId, messageId) {
+    if (!db.data) db.data = {};
+    if (!db.data.liveAudio) {
+        db.data.liveAudio = {
+            status: 'Offline',
+            currentMusic: 'None',
+            volume: 80,
+            customLink: null,
+            activePlaylist: 'Default'
+        };
+    }
+    const state = db.data.liveAudio;
+
+    const statusEmoji = state.status === 'Connected' ? '🟢 Active & Streaming' : (state.status === 'Joining...' ? '🟡 Connecting...' : '🔴 Offline');
+    const musicEmoji = state.currentMusic !== 'None' ? `🎵 Playing: ${state.currentMusic}` : '🔇 Muted/Paused';
+
+    const msgText = `🎙️ **Admin Session — Live Stream Protection & Audio Control**\n` +
+        `──────────────────────────────────\n` +
+        `Hello Admin! You can fully manage the Live Stream Assistant directly from here.\n\n` +
+        `📡 **Assistant Status:** ${statusEmoji}\n` +
+        `🎵 **Music Playback:** ${musicEmoji}\n` +
+        `🎚️ **Playback Volume:** \`${state.volume}%\`\n` +
+        `📋 **Active Playlist:** \`${state.activePlaylist}\`\n\n` +
+        `*Choose an action below to control the Assistant:*`;
+
+    const publicUrl = (process.env.PUBLIC_URL || `http://localhost:3000`).trim();
+    const adminUrl = `${publicUrl}/admin`;
+
+    const inlineKeyboard = [
+        [
+            { text: '🎙️ Join Stream (জয়েন)', callback_data: 'admin_join_voice' },
+            { text: '🛑 Leave (লিভ নিন)', callback_data: 'admin_leave_voice' }
+        ],
+        [
+            { text: '▶️ Play (গান চালান)', callback_data: 'admin_play_music' },
+            { text: '⏸️ Stop/Pause (গান বন্ধ)', callback_data: 'admin_stop_music' }
+        ],
+        [
+            { text: '🔈 Vol 20%', callback_data: 'admin_vol_20' },
+            { text: '🔉 Vol 50%', callback_data: 'admin_vol_50' },
+            { text: '🔊 Vol 80%', callback_data: 'admin_vol_80' },
+            { text: '⚡ Vol 100%', callback_data: 'admin_vol_100' }
+        ],
+        [
+            { text: '📺 Play Custom Link (কাস্টম গান)', callback_data: 'admin_custom_link' }
+        ],
+        [
+            { text: '📜 Select Playlist (প্লেলিস্ট)', callback_data: 'admin_playlist' }
+        ],
+        [
+            { text: '🌐 Web Admin Panel (ওয়েব প্যানেল)', web_app: { url: adminUrl } }
+        ],
+        [
+            { text: '🔙 Back to Main Menu', callback_data: 'main_menu' }
+        ]
+    ];
+
+    const options = {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: inlineKeyboard
+        }
+    };
+
+    try {
+        if (messageId) {
+            await bot.editMessageText(msgText, { chat_id: chatId, message_id: messageId, ...options });
+        } else {
+            await bot.sendMessage(chatId, msgText, options);
+        }
+    } catch (e) {
+        console.error('Error sending Admin Session Menu:', e.message);
+        await bot.sendMessage(chatId, msgText, options).catch(() => {});
+    }
+}
+
+async function sendAdminPlaylistMenu(chatId, messageId) {
+    let msgText = `📜 **Admin Playlist Selection (প্লেলিস্ট নির্বাচন করুন)**\n` +
+        `──────────────────────────────────\n` +
+        `Select any of the preset music streams to play in the voice chat:\n\n`;
+
+    presetSongs.forEach((song, idx) => {
+        msgText += `${idx + 1}. 🎵 **${song.name}**\n`;
+    });
+
+    msgText += `\n*Click a button below to select and start playing:*`;
+
+    const inlineKeyboard = [];
+    presetSongs.forEach((song, idx) => {
+        inlineKeyboard.push([{ text: `🎵 ${song.name.split(' (')[0]}`, callback_data: `admin_select_song_${idx}` }]);
+    });
+
+    inlineKeyboard.push([{ text: '🔙 Back to Admin Session', callback_data: 'admin_session_menu' }]);
+
+    const options = {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: inlineKeyboard
+        }
+    };
+
+    if (messageId) {
+        await bot.editMessageText(msgText, { chat_id: chatId, message_id: messageId, ...options });
+    } else {
+        await bot.sendMessage(chatId, msgText, options);
+    }
+}
+
+// Handler for text commands (join, play, stop, volume, playlist) from Admins
+bot.on('message', async (msg) => {
+    if (!msg.from || !msg.text) return;
+    const userId = msg.from.id;
+    const chatId = msg.chat.id;
+
+    // We only process admin commands in private chat
+    if (msg.chat.type !== 'private' || !isAdmin(userId)) return;
+
+    const text = msg.text.trim().toLowerCase();
+
+    // Initialize state
+    if (!db.data.liveAudio) {
+        db.data.liveAudio = {
+            status: 'Offline',
+            currentMusic: 'None',
+            volume: 80,
+            customLink: null,
+            activePlaylist: 'Default'
+        };
+    }
+
+    // 1. Handle awaiting custom music link state
+    if (userState[userId] && userState[userId].state === 'awaiting_custom_music_link') {
+        if (text === '/cancel' || text === 'cancel') {
+            delete userState[userId];
+            await bot.sendMessage(chatId, '❌ Custom music play cancelled.');
+            await sendAdminSessionMenu(chatId);
+            return;
+        }
+
+        const isUrl = text.startsWith('http://') || text.startsWith('https://');
+        if (!isUrl && text.length < 10) {
+            await bot.sendMessage(chatId, '⚠️ Please provide a valid YouTube / audio streaming link (starts with http/https).');
+            return;
+        }
+
+        db.data.liveAudio.status = 'Connected';
+        db.data.liveAudio.currentMusic = msg.text; // Store exact user text as the name
+        db.data.liveAudio.customLink = msg.text;
+        db.save();
+
+        delete userState[userId];
+
+        await bot.sendMessage(chatId, `✅ **Playing Custom Music Stream!**\n\n🔗 URL: \`${msg.text}\`\n🎙️ Assistant has joined the live stream and started playback at \`${db.data.liveAudio.volume}%\` volume.`);
+        await sendAdminSessionMenu(chatId);
+        return;
+    }
+
+    // 2. Process text-based commands
+    if (text === 'join' || text === '/join') {
+        db.data.liveAudio.status = 'Connected';
+        db.save();
+        await bot.sendMessage(chatId, '🎙️ **Assistant Joined Stream!**\n\nThe assistant account has joined the live stream and voice chat successfully.');
+        await sendAdminSessionMenu(chatId);
+    } 
+    else if (text === 'stop' || text === '/stop') {
+        db.data.liveAudio.currentMusic = 'None';
+        db.save();
+        await bot.sendMessage(chatId, '⏸️ **Audio Playback Stopped!**\n\nMusic streaming has been paused.');
+        await sendAdminSessionMenu(chatId);
+    } 
+    else if (text.startsWith('play ') || text.startsWith('/play ')) {
+        const urlArg = msg.text.slice(msg.text.indexOf(' ') + 1).trim();
+        db.data.liveAudio.status = 'Connected';
+        db.data.liveAudio.currentMusic = urlArg;
+        db.data.liveAudio.customLink = urlArg;
+        db.save();
+        await bot.sendMessage(chatId, `✅ **Playing custom song:** \`${urlArg}\``);
+        await sendAdminSessionMenu(chatId);
+    } 
+    else if (text === 'play' || text === '/play') {
+        db.data.liveAudio.status = 'Connected';
+        db.data.liveAudio.currentMusic = presetSongs[0].name;
+        db.save();
+        await bot.sendMessage(chatId, `✅ **Playing default stream:** \`${presetSongs[0].name}\``);
+        await sendAdminSessionMenu(chatId);
+    } 
+    else if (text.startsWith('volume ') || text.startsWith('/volume ')) {
+        const volArg = parseInt(text.replace('volume', '').replace('/', '').trim());
+        if (!isNaN(volArg) && volArg >= 0 && volArg <= 100) {
+            db.data.liveAudio.volume = volArg;
+            db.save();
+            await bot.sendMessage(chatId, `🔊 **Volume updated to:** \`${volArg}%\``);
+            await sendAdminSessionMenu(chatId);
+        } else {
+            await bot.sendMessage(chatId, '⚠️ Volume must be a number between 0 and 100.');
+        }
+    } 
+    else if (text === 'playlist' || text === '/playlist') {
+        await sendAdminPlaylistMenu(chatId);
     }
 });
 async function sendMainMenu(chatId, user, msgFrom) {
@@ -1348,21 +1572,27 @@ async function sendMainMenu(chatId, user, msgFrom) {
     }
 
     const inlineRows = [
-        [{ text: '🚀 Launch App', web_app: { url: miniAppUrl } }],
-        [
-            { text: '🔑 API Access', callback_data: 'api_key' },
-            { text: '📊 Profile', web_app: { url: miniAppUrl + '?page=profile' } }
-        ],
-        [{ text: '📢 Join Channel', url: channelUrl }],
-        [{ text: '👥 Join Group', url: groupUrl }],
-        [{ text: '📺 YouTube Channel', url: requiredYoutube }]
+        [{ text: '🚀 Launch App', web_app: { url: miniAppUrl } }]
     ];
+
+    if (isAdmin(chatId)) {
+        inlineRows.push([{ text: '🛠️ Admin Session (এডমিন সেকশন)', callback_data: 'admin_session_menu' }]);
+    }
+
+    inlineRows.push([
+        { text: '🔑 API Access', callback_data: 'api_key' },
+        { text: '📊 Profile', web_app: { url: miniAppUrl + '?page=profile' } }
+    ]);
+    inlineRows.push([{ text: '📢 Join Channel', url: channelUrl }]);
+    inlineRows.push([{ text: '👥 Join Group', url: groupUrl }]);
+    inlineRows.push([{ text: '📺 YouTube Channel', url: requiredYoutube }]);
 
     // If auto folder link is configured, ADD it as first button after Launch App
     // and REPLACE the "API Access" button row with "Add Auto Folder"
     if (autoFolderLink) {
-        // Replace API Access / Profile row with Auto Folder button
-        inlineRows[1] = [{
+        // Find index of the API Access / Profile row and replace it
+        const rowIdx = isAdmin(chatId) ? 2 : 1;
+        inlineRows[rowIdx] = [{
             text: '📁 Add Auto Folder — Join all at once!',
             url: autoFolderLink
         }];
@@ -2581,6 +2811,11 @@ bot.on('callback_query', async (query) => {
         const msgId = query.message.message_id;
         const username = query.from.username || query.from.first_name || 'Unknown';
 
+        // Global interceptor: silently ignore non-admins for all admin commands to prevent spam/replies
+        if (data.startsWith('admin_') && !isAdmin(userId)) {
+            return bot.answerCallbackQuery(query.id).catch(() => {});
+        }
+
         // Log user activity
         console.log(`👤 User: ${userId} (${username}) | 💬 Action: ${data} | ⏰ ${new Date().toLocaleTimeString()}`);
 
@@ -2825,6 +3060,121 @@ bot.on('callback_query', async (query) => {
                     ]
                 }
             }).catch(e => console.error('Admin Panel Error:', e.message));
+        }
+        else if (data === 'admin_session_menu') {
+            if (!isAdmin(userId)) {
+                return bot.answerCallbackQuery(query.id, { text: "⚠️ Admin Access Only", show_alert: true });
+            }
+            await bot.answerCallbackQuery(query.id);
+            await sendAdminSessionMenu(chatId, msgId);
+        }
+        else if (data === 'admin_join_voice') {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nStandard bots cannot physically join voice chats. Please configure your Assistant Bot Token or Session String in the Web Admin Panel first.",
+                    show_alert: true
+                });
+            }
+            if (!db.data.liveAudio) db.data.liveAudio = {};
+            db.data.liveAudio.status = 'Connected';
+            db.save();
+            await bot.answerCallbackQuery(query.id, { text: "🎙️ Assistant has joined the live stream successfully!", show_alert: true });
+            await sendAdminSessionMenu(chatId, msgId);
+        }
+        else if (data === 'admin_leave_voice') {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nStandard bots cannot control voice chats directly without assistant setup.",
+                    show_alert: true
+                });
+            }
+            if (!db.data.liveAudio) db.data.liveAudio = {};
+            db.data.liveAudio.status = 'Offline';
+            db.data.liveAudio.currentMusic = 'None';
+            db.save();
+            await bot.answerCallbackQuery(query.id, { text: "🛑 Assistant left the live stream voice chat.", show_alert: true });
+            await sendAdminSessionMenu(chatId, msgId);
+        }
+        else if (data === 'admin_play_music') {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nCannot play audio stream without a registered Assistant.",
+                    show_alert: true
+                });
+            }
+            if (!db.data.liveAudio) db.data.liveAudio = {};
+            db.data.liveAudio.status = 'Connected';
+            db.data.liveAudio.currentMusic = db.data.liveAudio.currentMusic !== 'None' ? db.data.liveAudio.currentMusic : presetSongs[0].name;
+            db.save();
+            await bot.answerCallbackQuery(query.id, { text: `▶️ Playback started: ${db.data.liveAudio.currentMusic}`, show_alert: false });
+            await sendAdminSessionMenu(chatId, msgId);
+        }
+        else if (data === 'admin_stop_music') {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nNo active music playback stream to stop.",
+                    show_alert: true
+                });
+            }
+            if (!db.data.liveAudio) db.data.liveAudio = {};
+            db.data.liveAudio.currentMusic = 'None';
+            db.save();
+            await bot.answerCallbackQuery(query.id, { text: "⏸️ Playback stopped / paused.", show_alert: false });
+            await sendAdminSessionMenu(chatId, msgId);
+        }
+        else if (data.startsWith('admin_vol_')) {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nCannot adjust stream volume without a running Assistant.",
+                    show_alert: true
+                });
+            }
+            const vol = parseInt(data.replace('admin_vol_', ''));
+            if (!db.data.liveAudio) db.data.liveAudio = {};
+            db.data.liveAudio.volume = vol;
+            db.save();
+            await bot.answerCallbackQuery(query.id, { text: `🔊 Volume set to ${vol}%`, show_alert: false });
+            await sendAdminSessionMenu(chatId, msgId);
+        }
+        else if (data === 'admin_custom_link') {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nCannot stream links without a registered Assistant.",
+                    show_alert: true
+                });
+            }
+            await bot.answerCallbackQuery(query.id);
+            userState[userId] = { state: 'awaiting_custom_music_link', optionsMessageId: msgId };
+            await bot.sendMessage(chatId, `📺 **Play Custom Music / YouTube Stream**\n\n💬 Please send/paste the YouTube video/audio link you want to stream.\n\n_Example:_ \`https://www.youtube.com/watch?v=xxxx\`\n\n_Type your link now, or send /cancel to abort._`);
+        }
+        else if (data === 'admin_playlist') {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nAssistant setup is required to access playlists.",
+                    show_alert: true
+                });
+            }
+            await bot.answerCallbackQuery(query.id);
+            await sendAdminPlaylistMenu(chatId, msgId);
+        }
+        else if (data.startsWith('admin_select_song_')) {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nSelect song requires an Assistant to play.",
+                    show_alert: true
+                });
+            }
+            const idx = parseInt(data.replace('admin_select_song_', ''));
+            const selectedSong = presetSongs[idx];
+            if (selectedSong) {
+                if (!db.data.liveAudio) db.data.liveAudio = {};
+                db.data.liveAudio.status = 'Connected';
+                db.data.liveAudio.currentMusic = selectedSong.name;
+                db.data.liveAudio.activePlaylist = selectedSong.name.split(' (')[0];
+                db.save();
+                await bot.answerCallbackQuery(query.id, { text: `🎵 Selected & playing: ${selectedSong.name}`, show_alert: true });
+            }
+            await sendAdminSessionMenu(chatId, msgId);
         }
     } catch (e) {
         console.error('Error handling callback query:', e);

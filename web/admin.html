@@ -5475,8 +5475,8 @@
                                 </label>
                             </div>
                             <p class="text-xs text-gray-400 mb-4">
-                                Standard bots are restricted by Telegram's Bot API and cannot physically join voice/video chat participants list, speak, or play music/audio. 
-                                By adding a <b>Userbot (MTProto Client / Pyrogram / Telethon / GramJS)</b>, your configured user account can join streams, unmute/mute, and play music/audio alongside standard bot commands!
+                                Standard bots are restricted by Telegram's Bot API and cannot physically join voice/video chat participants list directly without assistant setup. 
+                                By adding an <b>Assistant Bot Token (সহকারী বট টোকেন)</b> or <b>Userbot Session (Pyrogram/Telethon)</b>, your live assistant account can join streams, manage live stream status, unmute/mute, and play high-quality music/audio!
                             </p>
                             <div class="space-y-3">
                                 <div>
@@ -5486,13 +5486,13 @@
                                 </div>
                                 <div>
                                     <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot API Hash</label>
-                                    <input type="password" id="gm_userbotApiHash" placeholder="e.g. a1b2c3d4e5f6g7h8i9j0"
+                                    <input type="text" id="gm_userbotApiHash" placeholder="e.g. a1b2c3d4e5f6g7h8i9j0"
                                         class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
                                 </div>
                                 <div>
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot Session String / Phone Number</label>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot Session String / Assistant Bot Token (সহকারী বট টোকেন)</label>
                                     <textarea id="gm_userbotSessionString" rows="3"
-                                        placeholder="Enter Pyrogram / Telethon session string or phone number..."
+                                        placeholder="Enter Pyrogram / Telethon session string or Assistant Bot Token (সহকারী বট টোকেন)..."
                                         class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none resize-none"></textarea>
                                 </div>
 
@@ -5670,6 +5670,20 @@
                                     <label class="relative inline-flex items-center cursor-pointer">
                                         <input type="checkbox" id="gm_autoJoinLiveStream" class="sr-only peer">
                                         <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                    </label>
+                                </div>
+
+                                <!-- Live Stream Start Alerts -->
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <div>
+                                        <div class="text-sm font-bold text-gray-200">
+                                            Live Stream User Alerts (অ্যালার্ট নোটিফিকেশন)
+                                        </div>
+                                        <div class="text-[10px] text-gray-400">Broadcast notifications to users when live starts. Disable to run private/silent streams.</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_enableLiveStreamAlerts" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
                                     </label>
                                 </div>
 
@@ -6333,6 +6347,7 @@
                         'gm_deleteDmSolicitations': 'deleteDmSolicitations',
                         'gm_blockChannelAccounts': 'blockChannelAccounts',
                         'gm_autoJoinLiveStream': 'autoJoinLiveStream',
+                        'gm_enableLiveStreamAlerts': 'enableLiveStreamAlerts',
                         'gm_autoChannelReaction': 'autoChannelReaction',
                         'gm_enableWarningSystem': 'enableWarningSystem',
                         'gm_enableBanCommand': 'enableBanCommand',
@@ -6362,6 +6377,21 @@
                         banCmdF.value = settings.banCommand;
                     }
 
+                    // Load Userbot Configuration fields
+                    const uEnabledEl = document.getElementById('gm_userbotEnabled');
+                    if (uEnabledEl) uEnabledEl.checked = settings.userbotEnabled === true;
+                    const uApiIdEl = document.getElementById('gm_userbotApiId');
+                    if (uApiIdEl) uApiIdEl.value = settings.userbotApiId || '';
+                    const uApiHashEl = document.getElementById('gm_userbotApiHash');
+                    if (uApiHashEl) uApiHashEl.value = settings.userbotApiHash || '';
+                    const uSessionEl = document.getElementById('gm_userbotSessionString');
+                    if (uSessionEl) uSessionEl.value = settings.userbotSessionString || '';
+
+                    const uMusicEl = document.getElementById('gm_userbotMusicPlayback');
+                    if (uMusicEl) uMusicEl.checked = settings.userbotMusicPlayback === true;
+                    const uAutoJoinEl = document.getElementById('gm_userbotAutoJoinVoiceChat');
+                    if (uAutoJoinEl) uAutoJoinEl.checked = settings.userbotAutoJoinVoiceChat === true;
+
                     // Setup auto-save for auto-approve toggle
                     const autoApproveEl = document.getElementById('gm_autoApproveJoinRequests');
                     if (autoApproveEl && !autoApproveEl.dataset.listenerAdded) {
@@ -6376,6 +6406,14 @@
                     if (ajlsElToggle && !ajlsElToggle.dataset.listenerAdded) {
                         ajlsElToggle.dataset.listenerAdded = 'true';
                         ajlsElToggle.addEventListener('change', function () {
+                            saveGroupManagementSettings();
+                        });
+                    }
+
+                    const elsElToggle = document.getElementById('gm_enableLiveStreamAlerts');
+                    if (elsElToggle && !elsElToggle.dataset.listenerAdded) {
+                        elsElToggle.dataset.listenerAdded = 'true';
+                        elsElToggle.addEventListener('change', function () {
                             saveGroupManagementSettings();
                         });
                     }
@@ -14405,6 +14443,8 @@
                     // Load Live Stream & Channel Post Assistant
                     const ajlsEl = document.getElementById('gm_autoJoinLiveStream');
                     if (ajlsEl) ajlsEl.checked = s.autoJoinLiveStream === true;
+                    const elsEl = document.getElementById('gm_enableLiveStreamAlerts');
+                    if (elsEl) elsEl.checked = s.enableLiveStreamAlerts !== false;
                     const acrEl = document.getElementById('gm_autoChannelReaction');
                     if (acrEl) acrEl.checked = s.autoChannelReaction === true;
 
@@ -14460,6 +14500,7 @@
                 banCommand: document.getElementById('gm_banCommand')?.value || "",
                 autoApproveJoinRequests: document.getElementById('gm_autoApproveJoinRequests')?.checked === true,
                 autoJoinLiveStream: document.getElementById('gm_autoJoinLiveStream')?.checked || false,
+                enableLiveStreamAlerts: document.getElementById('gm_enableLiveStreamAlerts')?.checked !== false,
                 autoChannelReaction: document.getElementById('gm_autoChannelReaction')?.checked || false,
                 userbotEnabled: document.getElementById('gm_userbotEnabled')?.checked || false,
                 userbotApiId: document.getElementById('gm_userbotApiId')?.value || "",
