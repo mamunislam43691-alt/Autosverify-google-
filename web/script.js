@@ -7321,6 +7321,16 @@ function viewPurchaseDetail(encoded) {
         const p = JSON.parse(decodeURIComponent(encoded));
         const d = p.details || {};
 
+        if (d.accountType === 'vcard') {
+            showVirtualCardModal(p.itemType, d, p);
+            return;
+        }
+
+        if (d.accountType === 'passivecard') {
+            showPassiveCardModal(p.itemType, d, p);
+            return;
+        }
+
         // If it's a card purchase (has cardRaw or email with |)
         const emailVal = d.email || '';
         const isCard = emailVal.includes('|') || (p.cardRaw && p.cardRaw.startsWith('{'));
@@ -7337,9 +7347,11 @@ function viewPurchaseDetail(encoded) {
         } else {
             // Show as info modal
             const fields = [
-                d.email ? { label: 'Email', val: d.email } : null,
-                d.password ? { label: 'Password', val: d.password } : null,
-                d.twoFA ? { label: '2FA', val: d.twoFA } : null,
+                d.email ? { label: d.accountType === 'proxy' ? 'IP:Port' : (d.accountType === 'gmail' ? 'Google Email' : 'Email / Username'), val: d.email } : null,
+                d.password ? { label: d.accountType === 'proxy' ? 'Proxy Username' : 'Password', val: d.password } : null,
+                d.twoFA ? { label: d.accountType === 'proxy' ? 'Proxy Password' : '2FA Secret', val: d.twoFA } : null,
+                d.recoveryEmail ? { label: 'Recovery Email', val: d.recoveryEmail } : null,
+                d.proxyProtocol ? { label: 'Protocol', val: d.proxyProtocol.toUpperCase() } : null,
                 d.cardNumber ? { label: 'Card Number', val: d.cardNumber } : null,
                 d.cardExpiry ? { label: 'Expiry', val: d.cardExpiry } : null,
                 d.cardCVV ? { label: 'CVV', val: d.cardCVV } : null,
@@ -15154,7 +15166,7 @@ function closeApiDocs() {
 // =============================================
 // VIRTUAL CARD PURCHASE MODAL — Beautiful card UI
 // =============================================
-function showVirtualCardModal(itemName, acc) {
+function showVirtualCardModal(itemName, acc, purchaseObj) {
     const existing = document.getElementById('vcardPurchaseModal');
     if (existing) existing.remove();
 
@@ -15250,6 +15262,12 @@ function showVirtualCardModal(itemName, acc) {
                 </div>
             </div>` : ''}
 
+            ${purchaseObj && purchaseObj.price === 0 ? `
+            <button onclick="cleanFreePurchaseClaim('${purchaseObj.itemId || ''}', '${itemName}', ${purchaseObj.boughtAt}); document.getElementById('vcardPurchaseModal')?.remove();"
+                style="width:100%;margin-top:10px;margin-bottom:10px;padding:13px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                <i class="fas fa-trash-alt"></i> Clean Claim History
+            </button>` : ''}
+
             <!-- Close button -->
             <button onclick="document.getElementById('vcardPurchaseModal').remove()"
                 style="width:100%;margin-top:14px;padding:13px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;letter-spacing:0.5px;">
@@ -15280,7 +15298,7 @@ window.showVirtualCardModal = showVirtualCardModal;
 // =============================================
 // PASSIVE CARD PURCHASE MODAL
 // =============================================
-function showPassiveCardModal(itemName, acc) {
+function showPassiveCardModal(itemName, acc, purchaseObj) {
     const existing = document.getElementById('passiveCardModal');
     if (existing) existing.remove();
 
@@ -15338,6 +15356,11 @@ function showPassiveCardModal(itemName, acc) {
                 <i class="fas fa-check-circle" style="color:#22c55e;font-size:13px;"></i>
                 <span style="font-size:12px;color:#86efac;">Backend email linked — OTP routing active</span>
             </div>` : ''}
+            ${purchaseObj && purchaseObj.price === 0 ? `
+            <button onclick="cleanFreePurchaseClaim('${purchaseObj.itemId || ''}', '${itemName}', ${purchaseObj.boughtAt}); document.getElementById('passiveCardModal')?.remove();"
+                style="width:100%;margin-bottom:12px;padding:13px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                <i class="fas fa-trash-alt"></i> Clean Claim History
+            </button>` : ''}
             <button onclick="document.getElementById('passiveCardModal').remove()"
                 style="width:100%;padding:13px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;">
                 ✅ Got It!

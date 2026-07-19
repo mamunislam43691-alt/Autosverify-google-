@@ -176,8 +176,8 @@ function getText(lang, key, ...args) {
 }
 
 function getUserLanguage(userId, db) {
-    const user = db.getUser(userId);
-    return user.language || 'en';
+    const user = (db && typeof db.getUser === 'function') ? db.getUser(userId) : null;
+    return (user && user.language) ? user.language : 'en';
 }
 
 module.exports = { languages, getText, getUserLanguage };

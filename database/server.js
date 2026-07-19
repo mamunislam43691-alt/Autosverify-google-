@@ -1255,7 +1255,8 @@ app.get('/api/user/sync/:userId', async (req, res) => {
         completedTasks: user.completedTasks || [],
         lastClaim: user.lastDaily || 0,
         dailyStreak: user.dailyStreak || 0,
-        banned: user.banned || false
+        banned: user.banned || false,
+        purchasedAccounts: (user.purchasedAccounts || []).map(p => ({ itemId: p.itemId || '', category: p.category || '', price: p.price || 0, purchasedAt: p.purchasedAt || p.date || 0 }))
     });
 });
 
@@ -1422,7 +1423,7 @@ app.post('/api/register', async (req, res) => {
         apiKey: user.apiKey || null,
         banned: user.banned || user.blocked || false,
         webMessages: webMessages,
-        purchasedAccounts: (user.purchasedAccounts || []).map(p => ({ itemId: p.itemId, category: p.category, price: p.price || 0 }))
+        purchasedAccounts: (user.purchasedAccounts || []).map(p => ({ itemId: p.itemId || '', category: p.category || '', price: p.price || 0, purchasedAt: p.purchasedAt || p.date || 0 }))
     });
 });
 
@@ -1548,8 +1549,29 @@ app.get('/api/user/:userId/purchases', async (req, res) => {
         })),
         ...purchasedAccounts.map(p => ({
             type: 'account',
+            itemId: p.itemId || '',
+            price: p.price !== undefined ? p.price : 0,
             itemType: p.category || 'Account',
-            details: { email: p.email, password: p.password, twoFA: p.twofa || '' },
+            details: {
+                email: p.email || '',
+                password: p.password || '',
+                twoFA: p.twofa || p.twoFA || '',
+                accountType: p.accountType || 'other',
+                cardHolder: p.cardHolder || '',
+                cardNumber: p.cardNumber || '',
+                expiry: p.expiry || '',
+                cvv: p.cvv || '',
+                address: p.address || '',
+                city: p.city || '',
+                zip: p.zip || '',
+                country: p.country || '',
+                cardType: p.cardType || '',
+                passiveLabel: p.passiveLabel || p.label || '',
+                recoveryEmail: p.recoveryEmail || '',
+                proxyProtocol: p.proxyProtocol || '',
+                linkedEmail: p.linkedEmail || '',
+                hasLinkedEmail: !!(p.linkedEmail || (p.email && p.accountType === 'passivecard'))
+            },
             boughtAt: p.purchasedAt || Date.now()
         }))
     ].sort((a, b) => b.boughtAt - a.boughtAt);
@@ -9461,7 +9483,22 @@ app.post('/api/shop/buy', async (req, res) => {
         twofa: deliveredAccount ? (deliveredAccount.twofa || '') : '',
         category: item.name || itemId,
         price: priceNum,
-        purchasedAt: Date.now()
+        purchasedAt: Date.now(),
+        // Save additional fields if deliveredAccount is present:
+        accountType: deliveredAccount ? (deliveredAccount.accountType || 'other') : 'other',
+        cardHolder: deliveredAccount ? (deliveredAccount.cardHolder || '') : '',
+        cardNumber: deliveredAccount ? (deliveredAccount.cardNumber || '') : '',
+        expiry: deliveredAccount ? (deliveredAccount.expiry || '') : '',
+        cvv: deliveredAccount ? (deliveredAccount.cvv || '') : '',
+        address: deliveredAccount ? (deliveredAccount.address || '') : '',
+        city: deliveredAccount ? (deliveredAccount.city || '') : '',
+        zip: deliveredAccount ? (deliveredAccount.zip || '') : '',
+        country: deliveredAccount ? (deliveredAccount.country || '') : '',
+        cardType: deliveredAccount ? (deliveredAccount.cardType || '') : '',
+        passiveLabel: deliveredAccount ? (deliveredAccount.label || '') : '',
+        recoveryEmail: deliveredAccount ? (deliveredAccount.recoveryEmail || '') : '',
+        proxyProtocol: deliveredAccount ? (deliveredAccount.proxyProtocol || '') : '',
+        linkedEmail: deliveredAccount ? (deliveredAccount.linkedEmail || '') : ''
     });
 
     db.save();

@@ -22,6 +22,53 @@ const fs = require('fs');
 const path = require('path');
 const apiGateway = require('./services/api-gateway.js');
 
+// === MESSAGE AUTO-DELETION SCHEDULER ===
+function scheduleMessageDeletion(chatId, messageId, delayMs = 12 * 60 * 60 * 1000) {
+    if (!db.data.pendingDeletions) db.data.pendingDeletions = [];
+    const exists = db.data.pendingDeletions.some(d => String(d.chatId) === String(chatId) && String(d.messageId) === String(messageId));
+    if (!exists) {
+        db.data.pendingDeletions.push({
+            chatId: String(chatId),
+            messageId: String(messageId),
+            deleteAt: Date.now() + delayMs
+        });
+        db.save();
+    }
+    setTimeout(() => {
+        deleteScheduledMessage(chatId, messageId);
+    }, delayMs);
+}
+
+async function deleteScheduledMessage(chatId, messageId) {
+    try {
+        if (typeof bot.deleteMessage === 'function') {
+            await bot.deleteMessage(chatId, messageId);
+            console.log(`[AUTO-DELETE] Deleted message ${messageId} in chat ${chatId}`);
+        }
+    } catch (err) {
+        console.log(`[AUTO-DELETE] Note: Message ${messageId} in ${chatId} already deleted or unreachable: ${err.message}`);
+    }
+    if (db.data && db.data.pendingDeletions) {
+        const initialLength = db.data.pendingDeletions.length;
+        db.data.pendingDeletions = db.data.pendingDeletions.filter(d => !(String(d.chatId) === String(chatId) && String(d.messageId) === String(messageId)));
+        if (db.data.pendingDeletions.length !== initialLength) {
+            db.save();
+        }
+    }
+}
+
+async function checkPendingDeletions() {
+    if (!db.data || !db.data.pendingDeletions || db.data.pendingDeletions.length === 0) return;
+    const now = Date.now();
+    const toDelete = db.data.pendingDeletions.filter(d => d.deleteAt <= now);
+    if (toDelete.length === 0) return;
+    console.log(`[AUTO-DELETE] Processing ${toDelete.length} expired scheduled deletions...`);
+    for (const item of toDelete) {
+        await deleteScheduledMessage(item.chatId, item.messageId);
+        await new Promise(r => setTimeout(r, 100)); // Rate limit protection
+    }
+}
+
 // Store original console.log for internal logging
 const originalConsoleLog = console.log.bind(console);
 
@@ -49,7 +96,10 @@ let bot = {
     getChat: () => Promise.reject(new Error('No token')),
     getChatMember: () => Promise.reject(new Error('No token')),
     editMessageText: () => Promise.resolve({}),
-    answerCallbackQuery: () => Promise.resolve({})
+    answerCallbackQuery: () => Promise.resolve({}),
+    deleteMessage: () => Promise.resolve({}),
+    unpinChatMessage: () => Promise.resolve({}),
+    pinChatMessage: () => Promise.resolve({})
 };
 let botOptions = {
     polling: false, // Wait for DB load
@@ -109,6 +159,10 @@ db.dbReady.then(() => {
         
         // Initialize all listeners
         setupBotListeners();
+
+        // Start checking pending deletions periodically
+        checkPendingDeletions();
+        setInterval(checkPendingDeletions, 60 * 1000); // Check every 1 minute
         
     } else {
         console.warn('⚠️ WARNING: TELEGRAM_BOT_TOKEN is missing or invalid in both ENV and DB. Bot functionality will be disabled.');
@@ -123,7 +177,10 @@ db.dbReady.then(() => {
             getChat: () => Promise.reject(new Error('No token')),
             getChatMember: () => Promise.reject(new Error('No token')),
             editMessageText: () => Promise.resolve({}),
-            answerCallbackQuery: () => Promise.resolve({})
+            answerCallbackQuery: () => Promise.resolve({}),
+            deleteMessage: () => Promise.resolve({}),
+            unpinChatMessage: () => Promise.resolve({}),
+            pinChatMessage: () => Promise.resolve({})
         };
         
         // Inject mock bot into server too
@@ -131,6 +188,10 @@ db.dbReady.then(() => {
             const server = require('./database/server.js');
             server.setBot(bot);
         } catch (e) {}
+
+        // Still run checkPendingDeletions in mock mode to keep state in sync
+        checkPendingDeletions();
+        setInterval(checkPendingDeletions, 60 * 1000);
     }
 });
 
@@ -581,13 +642,21 @@ async function handleLiveStreamEvent(chatId, eventType, msg) {
                 await bot.unpinChatMessage(chatId, { message_id: pinnedId }).catch(err => {
                     bot.unpinChatMessage(chatId).catch(() => {});
                 });
+                await bot.deleteMessage(chatId, pinnedId).catch(err => {
+                    console.log(`[LIVESTREAM] Failed to delete active live stream start message: ${err.message}`);
+                });
                 activeLiveStreamPins.delete(chatId);
-                
-                let leaveMsg = `🎙️ **Live stream has ended.** Bot Assistant has left the stream.`;
-                if (settings.userbotEnabled && settings.userbotMusicPlayback) {
-                    leaveMsg += `\n🎵 **Music/Audio Playback player stopped.**`;
-                }
-                await bot.sendMessage(chatId, leaveMsg, { parse_mode: 'Markdown' });
+            }
+            
+            let leaveMsg = `🎙️ **Live stream has ended.** Bot Assistant has left the stream.`;
+            if (settings.userbotEnabled && settings.userbotMusicPlayback) {
+                leaveMsg += `\n🎵 **Music/Audio Playback player stopped.**`;
+            }
+            const sentLeave = await bot.sendMessage(chatId, leaveMsg, { parse_mode: 'Markdown' }).catch(() => {});
+            if (sentLeave) {
+                setTimeout(() => {
+                    bot.deleteMessage(chatId, sentLeave.message_id).catch(() => {});
+                }, 15000); // Auto-delete ended message after 15 seconds
             }
         }
     } catch (err) {
@@ -734,29 +803,16 @@ process.on('uncaughtException', (e) => { console.error('uncaughtException:', e);
 // Manage State 
 const userState = {};
 
-// Helper: Check authorization (Main Admin + Helper Admins)
+// Helper: Check authorization (strictly restricted to follow only one main admin ID per request)
 function isAdmin(userId) {
-    // Main admin
-    if (String(userId) === String(config.ADMIN_ID)) return true;
-    
-    // Allowed user IDs from config
-    if (config.ALLOWED_USER_IDS.includes(String(userId))) return true;
-    
-    // ✅ NEW: Check helper admins from database
-    const user = db.getUser(userId);
-    if (user && user.role === 'helper_admin' && user.helperAdminEnabled === true) {
-        return true;
-    }
-    
-    return false;
+    // Strictly follow only the main admin ID
+    return String(userId) === String(config.ADMIN_ID);
 }
 
 // Helper: Check if userbot is fully enabled and configured
 function isUserbotConfigured() {
     const settings = db.data?.adminSettings?.groupManagement || {};
-    return settings.userbotEnabled === true && 
-           typeof settings.userbotSessionString === 'string' && 
-           settings.userbotSessionString.trim().length > 0;
+    return settings.userbotEnabled === true;
 }
 
 // ✅ NEW: Check if user is main admin (not helper)
@@ -1059,7 +1115,12 @@ function showMandatoryJoin(chatId, membership, msgId = null, isFirstTime = false
             });
     } else {
         bot.sendMessage(chatId, msg, opts)
-            .then((sent) => console.log(`[JOIN] Sent new message ${sent.message_id} to ${chatId}`))
+            .then((sent) => {
+                console.log(`[JOIN] Sent new message ${sent.message_id} to ${chatId}`);
+                if (sent) {
+                    scheduleMessageDeletion(chatId, sent.message_id);
+                }
+            })
             .catch(e => console.error('Mandatory Join Msg Error:', e));
     }
 }
@@ -1152,7 +1213,7 @@ bot.onText(/\/start/, async (msg) => {
             db.data.botHosting.pendingUploads[String(userId)] = { createdAt: Date.now(), file: null };
             db.save();
 
-            await bot.sendMessage(chatId,
+            const hostMsg = await bot.sendMessage(chatId,
                 `🤖 *Bot Hosting — File Upload*\n\n` +
                 `Ready to receive your bot file!\n\n` +
                 `📎 *Send your bot script file now*\n` +
@@ -1161,6 +1222,9 @@ bot.onText(/\/start/, async (msg) => {
                 `After sending, go back to the *Bot Hosting* page and tap **✅ Check File**`,
                 { parse_mode: 'Markdown' }
             );
+            if (hostMsg) {
+                scheduleMessageDeletion(chatId, hostMsg.message_id);
+            }
             return;
         }
         // ── End Bot Hosting handler ───────────────────────────────────────
@@ -1327,10 +1391,10 @@ bot.onText(/\/admin/, async (msg) => {
 
 // --- ADMIN SESSION & LIVE AUDIO STREAMING CONTROL ---
 const presetSongs = [
-    { name: 'Islamic Nasheed (ইসলামিক গজল)', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-    { name: 'Lofi Beats Chill (লোফি মিউজিক)', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
+    { name: 'Islamic Nasheed', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+    { name: 'Lofi Beats Chill', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
     { name: 'Relaxing Ambient Stream', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
-    { name: 'Upbeat BG Track (ব্যাকগ্রাউন্ড)', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' }
+    { name: 'Upbeat BG Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' }
 ];
 
 async function sendAdminSessionMenu(chatId, messageId) {
@@ -1341,7 +1405,10 @@ async function sendAdminSessionMenu(chatId, messageId) {
             currentMusic: 'None',
             volume: 80,
             customLink: null,
-            activePlaylist: 'Default'
+            activePlaylist: 'Default',
+            targetChatId: null,
+            targetChatType: null,
+            targetChatTitle: null
         };
     }
     const state = db.data.liveAudio;
@@ -1349,10 +1416,18 @@ async function sendAdminSessionMenu(chatId, messageId) {
     const statusEmoji = state.status === 'Connected' ? '🟢 Active & Streaming' : (state.status === 'Joining...' ? '🟡 Connecting...' : '🔴 Offline');
     const musicEmoji = state.currentMusic !== 'None' ? `🎵 Playing: ${state.currentMusic}` : '🔇 Muted/Paused';
 
+    let destInfo = '';
+    if (state.status === 'Connected' && state.targetChatTitle) {
+        const typeIcon = state.targetChatType === 'channel' ? '📺' : '👥';
+        const typeName = state.targetChatType === 'channel' ? 'Channel' : 'Group';
+        destInfo = `📍 **Stream Destination:** ${typeIcon} ${typeName}: *${state.targetChatTitle}*\n`;
+    }
+
     const msgText = `🎙️ **Admin Session — Live Stream Protection & Audio Control**\n` +
         `──────────────────────────────────\n` +
         `Hello Admin! You can fully manage the Live Stream Assistant directly from here.\n\n` +
         `📡 **Assistant Status:** ${statusEmoji}\n` +
+        destInfo +
         `🎵 **Music Playback:** ${musicEmoji}\n` +
         `🎚️ **Playback Volume:** \`${state.volume}%\`\n` +
         `📋 **Active Playlist:** \`${state.activePlaylist}\`\n\n` +
@@ -1363,12 +1438,12 @@ async function sendAdminSessionMenu(chatId, messageId) {
 
     const inlineKeyboard = [
         [
-            { text: '🎙️ Join Stream (জয়েন)', callback_data: 'admin_join_voice' },
-            { text: '🛑 Leave (লিভ নিন)', callback_data: 'admin_leave_voice' }
+            { text: '🎙️ Join Stream', callback_data: 'admin_join_voice' },
+            { text: '🛑 Leave', callback_data: 'admin_leave_voice' }
         ],
         [
-            { text: '▶️ Play (গান চালান)', callback_data: 'admin_play_music' },
-            { text: '⏸️ Stop/Pause (গান বন্ধ)', callback_data: 'admin_stop_music' }
+            { text: '▶️ Play', callback_data: 'admin_play_music' },
+            { text: '⏸️ Stop/Pause', callback_data: 'admin_stop_music' }
         ],
         [
             { text: '🔈 Vol 20%', callback_data: 'admin_vol_20' },
@@ -1377,13 +1452,13 @@ async function sendAdminSessionMenu(chatId, messageId) {
             { text: '⚡ Vol 100%', callback_data: 'admin_vol_100' }
         ],
         [
-            { text: '📺 Play Custom Link (কাস্টম গান)', callback_data: 'admin_custom_link' }
+            { text: '📺 Play Custom Link', callback_data: 'admin_custom_link' }
         ],
         [
-            { text: '📜 Select Playlist (প্লেলিস্ট)', callback_data: 'admin_playlist' }
+            { text: '📜 Select Playlist', callback_data: 'admin_playlist' }
         ],
         [
-            { text: '🌐 Web Admin Panel (ওয়েব প্যানেল)', web_app: { url: adminUrl } }
+            { text: '🌐 Web Admin Panel', web_app: { url: adminUrl } }
         ],
         [
             { text: '🔙 Back to Main Menu', callback_data: 'main_menu' }
@@ -1410,7 +1485,7 @@ async function sendAdminSessionMenu(chatId, messageId) {
 }
 
 async function sendAdminPlaylistMenu(chatId, messageId) {
-    let msgText = `📜 **Admin Playlist Selection (প্লেলিস্ট নির্বাচন করুন)**\n` +
+    let msgText = `📜 **Admin Playlist Selection**\n` +
         `──────────────────────────────────\n` +
         `Select any of the preset music streams to play in the voice chat:\n\n`;
 
@@ -1576,7 +1651,7 @@ async function sendMainMenu(chatId, user, msgFrom) {
     ];
 
     if (isAdmin(chatId)) {
-        inlineRows.push([{ text: '🛠️ Admin Session (এডমিন সেকশন)', callback_data: 'admin_session_menu' }]);
+        inlineRows.push([{ text: '🛠️ Admin Session', callback_data: 'admin_session_menu' }]);
     }
 
     inlineRows.push([
@@ -1605,7 +1680,10 @@ async function sendMainMenu(chatId, user, msgFrom) {
     };
 
     try {
-        await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown', ...keyboard });
+        const sentMenuMsg = await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown', ...keyboard });
+        if (sentMenuMsg) {
+            scheduleMessageDeletion(chatId, sentMenuMsg.message_id);
+        }
     } catch (e) {
         console.error('Error sending main menu:', e);
     }
@@ -3075,10 +3153,160 @@ bot.on('callback_query', async (query) => {
                     show_alert: true
                 });
             }
+            await bot.answerCallbackQuery(query.id);
+
+            const selectionText = `🎙️ **Live Stream Destination Selection**\n` +
+                `──────────────────────────────────\n` +
+                `Where would you like to start the live stream?\n\n` +
+                `📺 **Channel:** Stream to a registered Telegram Channel.\n` +
+                `👥 **Group:** Stream to a registered Telegram Group / Supergroup.\n\n` +
+                `_Please select below:_`;
+
+            const selectionKeyboard = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '📺 Channel', callback_data: 'admin_dest_channel' },
+                            { text: '👥 Group', callback_data: 'admin_dest_group' }
+                        ],
+                        [
+                            { text: '🔙 Back to Session Menu', callback_data: 'admin_session_menu' }
+                        ]
+                    ]
+                }
+            };
+
+            await bot.editMessageText(selectionText, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', ...selectionKeyboard }).catch(() => {});
+        }
+        else if (data === 'admin_dest_channel') {
+            await bot.answerCallbackQuery(query.id);
+            const channels = db.getGroups().filter(g => g.type === 'channel');
+
+            if (channels.length === 0) {
+                const emptyText = `❌ **No Registered Channels Found!**\n` +
+                    `──────────────────────────────────\n` +
+                    `The bot does not have any registered channels in its database.\n\n` +
+                    `ℹ️ **To register a channel:**\n` +
+                    `1. Add this bot to your Telegram Channel.\n` +
+                    `2. Grant the bot **Administrator** permissions.\n` +
+                    `3. Post a message or wait for membership sync.\n\n` +
+                    `Once registered, the channel will appear here automatically.`;
+
+                const emptyKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔄 Refresh', callback_data: 'admin_dest_channel' }],
+                            [{ text: '🔙 Back', callback_data: 'admin_join_voice' }]
+                        ]
+                    }
+                };
+
+                await bot.editMessageText(emptyText, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', ...emptyKeyboard }).catch(() => {});
+                return;
+            }
+
+            let msgText = `📺 **Select Channel for Live Stream**\n` +
+                `──────────────────────────────────\n` +
+                `Please select which channel you want to start/join the live stream on:\n\n`;
+
+            const inlineKeyboard = [];
+            channels.forEach((ch, index) => {
+                const num = index + 1;
+                msgText += `🔹 **Channel ${num}:** ${ch.title} (\`${ch.id}\`)\n`;
+                inlineKeyboard.push([{
+                    text: `📺 ${num}. ${ch.title}`,
+                    callback_data: `admin_join_chat_${ch.id}`
+                }]);
+            });
+
+            inlineKeyboard.push([{ text: '🔙 Back', callback_data: 'admin_join_voice' }]);
+
+            const options = {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: inlineKeyboard
+                }
+            };
+
+            await bot.editMessageText(msgText, { chat_id: chatId, message_id: msgId, ...options }).catch(() => {});
+        }
+        else if (data === 'admin_dest_group') {
+            await bot.answerCallbackQuery(query.id);
+            const groups = db.getGroups().filter(g => g.type === 'group' || g.type === 'supergroup');
+
+            if (groups.length === 0) {
+                const emptyText = `❌ **No Registered Groups Found!**\n` +
+                    `──────────────────────────────────\n` +
+                    `The bot does not have any registered groups in its database.\n\n` +
+                    `ℹ️ **To register a group:**\n` +
+                    `1. Add this bot to your Telegram Group.\n` +
+                    `2. Ensure the bot is added and active.\n\n` +
+                    `Once registered, the group will appear here automatically.`;
+
+                const emptyKeyboard = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🔄 Refresh', callback_data: 'admin_dest_group' }],
+                            [{ text: '🔙 Back', callback_data: 'admin_join_voice' }]
+                        ]
+                    }
+                };
+
+                await bot.editMessageText(emptyText, { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown', ...emptyKeyboard }).catch(() => {});
+                return;
+            }
+
+            let msgText = `👥 **Select Group for Live Stream**\n` +
+                `──────────────────────────────────\n` +
+                `Please select which group you want to start/join the live stream on:\n\n`;
+
+            const inlineKeyboard = [];
+            groups.forEach((g, index) => {
+                const num = index + 1;
+                msgText += `🔹 **Group ${num}:** ${g.title} (\`${g.id}\`)\n`;
+                inlineKeyboard.push([{
+                    text: `👥 ${num}. ${g.title}`,
+                    callback_data: `admin_join_chat_${g.id}`
+                }]);
+            });
+
+            inlineKeyboard.push([{ text: '🔙 Back', callback_data: 'admin_join_voice' }]);
+
+            const options = {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: inlineKeyboard
+                }
+            };
+
+            await bot.editMessageText(msgText, { chat_id: chatId, message_id: msgId, ...options }).catch(() => {});
+        }
+        else if (data.startsWith('admin_join_chat_')) {
+            if (!isUserbotConfigured()) {
+                return bot.answerCallbackQuery(query.id, {
+                    text: "⚠️ Userbot Not Configured!\n\nStandard bots cannot physically join voice chats. Please configure your Assistant Bot Token or Session String in the Web Admin Panel first.",
+                    show_alert: true
+                });
+            }
+            const targetChatId = data.replace('admin_join_chat_', '');
+            
+            // Find chat in database
+            const chat = db.getGroups().find(g => String(g.id) === String(targetChatId));
+            const chatTitle = chat ? chat.title : 'Selected Chat';
+            const chatType = chat ? chat.type : 'unknown';
+
             if (!db.data.liveAudio) db.data.liveAudio = {};
             db.data.liveAudio.status = 'Connected';
+            db.data.liveAudio.targetChatId = targetChatId;
+            db.data.liveAudio.targetChatType = chatType;
+            db.data.liveAudio.targetChatTitle = chatTitle;
             db.save();
-            await bot.answerCallbackQuery(query.id, { text: "🎙️ Assistant has joined the live stream successfully!", show_alert: true });
+
+            await bot.answerCallbackQuery(query.id, {
+                text: `🎙️ Assistant joined the live stream in "${chatTitle}" successfully!`,
+                show_alert: true
+            });
+
             await sendAdminSessionMenu(chatId, msgId);
         }
         else if (data === 'admin_leave_voice') {
@@ -3091,6 +3319,9 @@ bot.on('callback_query', async (query) => {
             if (!db.data.liveAudio) db.data.liveAudio = {};
             db.data.liveAudio.status = 'Offline';
             db.data.liveAudio.currentMusic = 'None';
+            db.data.liveAudio.targetChatId = null;
+            db.data.liveAudio.targetChatType = null;
+            db.data.liveAudio.targetChatTitle = null;
             db.save();
             await bot.answerCallbackQuery(query.id, { text: "🛑 Assistant left the live stream voice chat.", show_alert: true });
             await sendAdminSessionMenu(chatId, msgId);
