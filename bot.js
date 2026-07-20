@@ -263,7 +263,6 @@ db.dbReady.then(() => {
         setInterval(checkPendingDeletions, 60 * 1000); // Check every 1 minute
     });
 });
-});
 
 // SMTP.DEV API Integration (Full Implementation)
 const SMTP_API_BASE = 'https://api.smtp.dev';
