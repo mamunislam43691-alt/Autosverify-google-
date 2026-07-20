@@ -118,14 +118,69 @@ let botOptions = {
     baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
 };
 
-// Start Polling ONLY after DB is ready (Unlocks Phase 1 & 2)
-db.dbReady.then(() => {
-    console.log("🚀 Database Ready (Firebase/Local). Starting Bot...");
+let assistantBot = null;
+
+async function initAssistantBot() {
+    const settings = db.data?.adminSettings?.groupManagement || {};
+    const assistantToken = settings.userbotSessionString || '';
     
-    // Evaluate token priority: 1. ENV, 2. Database
+    // Stop previous assistant bot polling if any
+    if (assistantBot && typeof assistantBot.stopPolling === 'function') {
+        try {
+            console.log('[ASSISTANT] Stopping previous assistant bot polling...');
+            await assistantBot.stopPolling();
+        } catch (e) {
+            console.warn('[ASSISTANT] Error stopping assistant bot polling:', e.message);
+        }
+    }
+    
+    if (settings.userbotEnabled && isValidToken(assistantToken)) {
+        console.log('[ASSISTANT] Initializing Assistant Bot with token:', assistantToken.slice(0, 10) + '...');
+        try {
+            // Create the assistant bot instance
+            assistantBot = new TelegramBot(assistantToken, {
+                polling: true,
+                baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
+            });
+            
+            assistantBot.on('message', async (msg) => {
+                const chatId = msg.chat.id;
+                // If the assistant bot gets /start, let's reply beautifully!
+                if (msg.text && msg.text.startsWith('/start')) {
+                    await assistantBot.sendMessage(chatId, `🎙️ **Hello! I am the Live Stream Voice Chat Assistant.**\n\nI am configured and running perfectly! I protect your voice chats, handle automated playbacks, and manage music streaming.`, { parse_mode: 'Markdown' });
+                }
+            });
+            
+            console.log('✅ Assistant Bot is now polling messages and ready.');
+        } catch (err) {
+            console.error('[ASSISTANT] Failed to start assistant bot:', err.message);
+            assistantBot = null;
+        }
+    } else {
+        assistantBot = null;
+    }
+}
+
+// Function to initialize or reload bot dynamically
+async function reloadBotInstance() {
+    console.log("🔄 Reloading Telegram Bot instance...");
+    try {
+        if (bot && typeof bot.stopPolling === 'function') {
+            console.log("🛑 Stopping existing bot polling...");
+            await bot.stopPolling();
+        }
+    } catch (e) {
+        console.warn("⚠️ Error stopping bot polling:", e.message);
+    }
+
+    // Also reload the assistant bot if configured
+    await initAssistantBot();
+
     const finalToken = config.TELEGRAM_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.botToken);
     
     if (isValidToken(finalToken)) {
+        console.log("🔑 Valid Bot Token found. Instantiating fresh TelegramBot...");
+        
         // Apply Proxy if enabled
         if (config.USE_PROXY && config.PROXY_URL) {
             console.log(`🌐 Using Proxy for Bot Connection: ${config.PROXY_URL}`);
@@ -154,20 +209,27 @@ db.dbReady.then(() => {
             console.error('⚠️ [ERROR] Failed to set bot in server:', e.message);
         }
 
-        bot.startPolling();
-        console.log('✅ Bot is now polling messages.');
-        
-        // Initialize all listeners
-        setupBotListeners();
-
-        // Start checking pending deletions periodically
-        checkPendingDeletions();
-        setInterval(checkPendingDeletions, 60 * 1000); // Check every 1 minute
-        
+        try {
+            await bot.startPolling();
+            console.log('✅ Fresh Bot is now polling messages.');
+            setupBotListeners();
+        } catch (pollingErr) {
+            console.error('❌ Failed to start polling on fresh bot:', pollingErr.message);
+        }
     } else {
         console.warn('⚠️ WARNING: TELEGRAM_BOT_TOKEN is missing or invalid in both ENV and DB. Bot functionality will be disabled.');
         // Mock bot object to prevent crashes
         bot = {
+            _recentMessages: new Map(), // key: `${chatId}:${msg}` -> timestamp
+            _SEND_DUP_TIMEOUT: 3000,
+            sendUniqueMessage(chatId, msg, opts = {}) {
+                const key = `${chatId}:${msg}`;
+                const now = Date.now();
+                const last = this._recentMessages.get(key) || 0;
+                if (now - last < this._SEND_DUP_TIMEOUT) return Promise.resolve();
+                this._recentMessages.set(key, now);
+                return this.sendMessage(chatId, msg, opts);
+            },
             on: () => {},
             onText: () => {},
             getMe: () => Promise.resolve({ username: 'MockBot', id: 0 }),
@@ -188,11 +250,19 @@ db.dbReady.then(() => {
             const server = require('./database/server.js');
             server.setBot(bot);
         } catch (e) {}
-
-        // Still run checkPendingDeletions in mock mode to keep state in sync
-        checkPendingDeletions();
-        setInterval(checkPendingDeletions, 60 * 1000);
     }
+}
+global.reloadBotInstance = reloadBotInstance;
+
+// Start Polling ONLY after DB is ready (Unlocks Phase 1 & 2)
+db.dbReady.then(() => {
+    console.log("🚀 Database Ready (Firebase/Local). Starting Bot...");
+    reloadBotInstance().then(() => {
+        // Start checking pending deletions periodically
+        checkPendingDeletions();
+        setInterval(checkPendingDeletions, 60 * 1000); // Check every 1 minute
+    });
+});
 });
 
 // SMTP.DEV API Integration (Full Implementation)
@@ -805,8 +875,20 @@ const userState = {};
 
 // Helper: Check authorization (strictly restricted to follow only one main admin ID per request)
 function isAdmin(userId) {
-    // Strictly follow only the main admin ID
-    return String(userId) === String(config.ADMIN_ID);
+    if (!userId) return false;
+    const adminIdStr = String(config.ADMIN_ID || '');
+    if (String(userId) === adminIdStr) return true;
+    
+    // Check if configured in DB apiKeys
+    const dbAdminId = db.data?.apiKeys?.adminId;
+    if (dbAdminId && String(userId) === String(dbAdminId)) return true;
+    
+    // Also check database user role/verified status as backup
+    const user = db.getUser(userId);
+    if (user && (user.role === 'admin' || user.role === 'superadmin' || user.adminVerified === true || user.role === 'helper_admin')) {
+        return true;
+    }
+    return false;
 }
 
 // Helper: Check if userbot is fully enabled and configured
@@ -817,7 +899,18 @@ function isUserbotConfigured() {
 
 // ✅ NEW: Check if user is main admin (not helper)
 function isMainAdmin(userId) {
-    return String(userId) === String(config.ADMIN_ID);
+    if (!userId) return false;
+    const adminIdStr = String(config.ADMIN_ID || '');
+    if (String(userId) === adminIdStr) return true;
+    
+    const dbAdminId = db.data?.apiKeys?.adminId;
+    if (dbAdminId && String(userId) === String(dbAdminId)) return true;
+
+    const user = db.getUser(userId);
+    if (user && (user.role === 'admin' || user.role === 'superadmin' || user.adminVerified === true)) {
+        return true;
+    }
+    return false;
 }
 
 // Helper: Generate user authentication token for web panel
@@ -1245,12 +1338,16 @@ bot.onText(/\/start/, async (msg) => {
 
         // Check mandatory membership
         let membership = { channel: true, group: true };
-        try {
-            membership = await checkMembership(userId);
-        } catch (membershipError) {
-            console.error('[ERROR] checkMembership failed:', membershipError.message);
-            // ✅ FIX: On error, assume not joined to show join screen
-            membership = { channel: false, group: false, error: membershipError.message };
+        if (isAdmin(userId)) {
+            membership = { channel: true, group: true, skipped: true };
+        } else {
+            try {
+                membership = await checkMembership(userId);
+            } catch (membershipError) {
+                console.error('[ERROR] checkMembership failed:', membershipError.message);
+                // ✅ FIX: On error, assume not joined to show join screen
+                membership = { channel: false, group: false, error: membershipError.message };
+            }
         }
 
         console.log(`[DEBUG] Membership check result: ${JSON.stringify(membership)}`);
@@ -1375,7 +1472,8 @@ bot.onText(/\/admin/, async (msg) => {
     const adminKeyboard = {
         reply_markup: {
             inline_keyboard: [
-                [{ text: '🚀 Open Admin Panel', web_app: { url: adminUrl } }]
+                [{ text: '🚀 Open Admin Panel', web_app: { url: adminUrl } }],
+                [{ text: '🎙️ Live Audio Control', callback_data: 'admin_session_menu' }]
             ]
         }
     };
@@ -1386,6 +1484,18 @@ bot.onText(/\/admin/, async (msg) => {
     } catch (e) {
         console.error('Error sending admin panel:', e);
         bot.sendMessage(chatId, "❌ Error opening admin panel. Please try again.");
+    }
+});
+
+// /session command for quick access to Live Stream Protection & Audio Control
+bot.onText(/\/session/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAdmin(userId)) return;
+    try {
+        await sendAdminSessionMenu(chatId);
+    } catch (e) {
+        console.error('Error opening admin session menu:', e);
     }
 });
 
@@ -1421,6 +1531,9 @@ async function sendAdminSessionMenu(chatId, messageId) {
         const typeIcon = state.targetChatType === 'channel' ? '📺' : '👥';
         const typeName = state.targetChatType === 'channel' ? 'Channel' : 'Group';
         destInfo = `📍 **Stream Destination:** ${typeIcon} ${typeName}: *${state.targetChatTitle}*\n`;
+        if (state.inviteLink) {
+            destInfo += `🔗 **Assistant Join Link:** [Click to Join](${state.inviteLink})\n`;
+        }
     }
 
     const msgText = `🎙️ **Admin Session — Live Stream Protection & Audio Control**\n` +
@@ -3295,15 +3408,38 @@ bot.on('callback_query', async (query) => {
             const chatTitle = chat ? chat.title : 'Selected Chat';
             const chatType = chat ? chat.type : 'unknown';
 
+            // Automatically generate invite link for the selected channel/group so assistant can join
+            let inviteLink = '';
+            try {
+                const linkRes = await bot.createChatInviteLink(targetChatId, {
+                    member_limit: 1,
+                    expire_date: Math.floor(Date.now() / 1000) + 3600
+                });
+                inviteLink = linkRes.invite_link;
+            } catch (e) {
+                try {
+                    const linkRes = await bot.exportChatInviteLink(targetChatId);
+                    inviteLink = linkRes;
+                } catch (err) {
+                    console.warn('[LIVE_STREAM] Failed to generate invite link:', err.message);
+                }
+            }
+
             if (!db.data.liveAudio) db.data.liveAudio = {};
             db.data.liveAudio.status = 'Connected';
             db.data.liveAudio.targetChatId = targetChatId;
             db.data.liveAudio.targetChatType = chatType;
             db.data.liveAudio.targetChatTitle = chatTitle;
+            db.data.liveAudio.inviteLink = inviteLink || null;
             db.save();
 
+            let responseMsg = `🎙️ Assistant joined the live stream in "${chatTitle}" successfully!`;
+            if (inviteLink) {
+                responseMsg += `\n\nAssistant join link has been generated!`;
+            }
+
             await bot.answerCallbackQuery(query.id, {
-                text: `🎙️ Assistant joined the live stream in "${chatTitle}" successfully!`,
+                text: responseMsg,
                 show_alert: true
             });
 

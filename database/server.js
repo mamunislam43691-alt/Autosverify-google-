@@ -6212,6 +6212,14 @@ app.post('/api/admin/group-management', (req, res) => {
         db.data.adminSettings.requireTelegram = requireTelegram;
     }
     db.save(true);
+
+    // Dynamically reload Telegram Bot and Assistant Bot if reload function is registered
+    if (typeof global.reloadBotInstance === 'function') {
+        global.reloadBotInstance().catch(err => {
+            console.error('[SERVER] Failed to dynamically reload Telegram Bot:', err.message);
+        });
+    }
+
     const autoApprove = db.data.adminSettings.autoApproveJoinRequests === true ||
         db.data.adminSettings.groupManagement.autoApproveJoinRequests === true;
     const response = {
@@ -8839,6 +8847,14 @@ app.post('/api/admin/apikeys', (req, res) => {
     }
 
     db.save();
+
+    // Dynamically reload Telegram Bot if reload function is registered
+    if (typeof global.reloadBotInstance === 'function') {
+        global.reloadBotInstance().catch(err => {
+            console.error('[SERVER] Failed to dynamically reload Telegram Bot:', err.message);
+        });
+    }
+
     res.json({ success: true, message: 'API Keys and Settings updated successfully' });
 });
 

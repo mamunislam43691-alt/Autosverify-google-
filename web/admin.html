@@ -3827,7 +3827,7 @@
                             </div>
                             <div>
                                 <h3 class="font-bold text-white">Gmail Mother Email</h3>
-                                <p class="text-xs text-gray-400">Gmail Pool এর সব email এখানে forward করুন</p>
+                                <p class="text-xs text-gray-400">Forward all Gmail Pool emails here</p>
                             </div>
                             <div class="ml-auto flex items-center gap-2">
                                 <div id="imap-status-dot-gmail" class="w-3 h-3 rounded-full bg-red-500"></div>
@@ -3873,7 +3873,7 @@
                             </div>
                             <div>
                                 <h3 class="font-bold text-white">Hotmail Mother Email</h3>
-                                <p class="text-xs text-gray-400">Hotmail Pool এর সব email এখানে forward করুন</p>
+                                <p class="text-xs text-gray-400">Forward all Hotmail Pool emails here</p>
                             </div>
                             <div class="ml-auto flex items-center gap-2">
                                 <div id="imap-status-dot-hotmail" class="w-3 h-3 rounded-full bg-red-500"></div>
@@ -5476,7 +5476,7 @@
                             </div>
                             <p class="text-xs text-gray-400 mb-4">
                                 Standard bots are restricted by Telegram's Bot API and cannot physically join voice/video chat participants list directly without assistant setup. 
-                                By adding an <b>Assistant Bot Token (সহকারী বট টোকেন)</b> or <b>Userbot Session (Pyrogram/Telethon)</b>, your live assistant account can join streams, manage live stream status, unmute/mute, and play high-quality music/audio!
+                                By adding an <b>Assistant Bot Token</b> or <b>Userbot Session (Pyrogram/Telethon)</b>, your live assistant account can join streams, manage live stream status, unmute/mute, and play high-quality music/audio!
                             </p>
                             <div class="space-y-3">
                                 <div>
@@ -5490,9 +5490,9 @@
                                         class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
                                 </div>
                                 <div>
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot Session String / Assistant Bot Token (সহকারী বট টোকেন)</label>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot Session String / Assistant Bot Token</label>
                                     <textarea id="gm_userbotSessionString" rows="3"
-                                        placeholder="Enter Pyrogram / Telethon session string or Assistant Bot Token (সহকারী বট টোকেন)..."
+                                        placeholder="Enter Pyrogram / Telethon session string or Assistant Bot Token..."
                                         class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none resize-none"></textarea>
                                 </div>
 
@@ -5502,7 +5502,7 @@
                                     
                                     <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-purple-500/10">
                                         <div>
-                                            <div class="text-sm font-semibold">Music & Audio Playback (গান বাজানো)</div>
+                                            <div class="text-sm font-semibold">Music & Audio Playback</div>
                                             <div class="text-xs text-gray-400">Allows the Userbot to play high-quality music/audio in live streams & voice chats upon joining.</div>
                                         </div>
                                         <label class="relative inline-flex items-center cursor-pointer">
@@ -5677,7 +5677,7 @@
                                 <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
                                     <div>
                                         <div class="text-sm font-bold text-gray-200">
-                                            Live Stream User Alerts (অ্যালার্ট নোটিফিকেশন)
+                                            Live Stream User Alerts
                                         </div>
                                         <div class="text-[10px] text-gray-400">Broadcast notifications to users when live starts. Disable to run private/silent streams.</div>
                                     </div>
@@ -6027,7 +6027,7 @@
                                     class="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 px-3 py-1 rounded-lg text-xs font-bold transition-all"><i
                                         class="fas fa-edit"></i> Edit</button>
                             </div>
-                            <p class="text-[11px] text-gray-400 mb-4">সার্ভার সিলেক্ট করলে সেই সার্ভারের API Key ও Base URL দেখাবে
+                            <p class="text-[11px] text-gray-400 mb-4">Selecting a server will display its API Key and Base URL
                             </p>
                             <div class="space-y-3">
                                 <div>
@@ -6039,7 +6039,7 @@
                                         <button
                                             onclick="copyText(document.getElementById('displayApiConfigKey').value, this)"
                                             class="bg-white/10 hover:bg-white/20 px-3 rounded-lg text-xs transition-all whitespace-nowrap"><i
-                                                class="fas fa-copy"></i> কপি</button>
+                                                class="fas fa-copy"></i> Copy</button>
                                     </div>
                                 </div>
                                 <div>
@@ -6051,29 +6051,29 @@
                                         <button
                                             onclick="copyText(document.getElementById('displayApiConfigUrl').value, this)"
                                             class="bg-white/10 hover:bg-white/20 px-3 rounded-lg text-xs transition-all whitespace-nowrap"><i
-                                                class="fas fa-copy"></i> কপি</button>
+                                                class="fas fa-copy"></i> Copy</button>
                                     </div>
                                 </div>
                             </div>
                             <div class="mt-4 border-t border-white/10 pt-4">
                                 <h4 class="text-xs font-bold flex items-center gap-2 mb-2"><i
-                                        class="fas fa-code text-purple-400"></i> সব এন্ডপয়েন্ট</h4>
+                                        class="fas fa-code text-purple-400"></i> All Endpoints</h4>
                                 <div
                                     class="bg-black/50 p-3 rounded-xl text-[10px] font-mono text-gray-300 space-y-1.5 max-h-[120px] overflow-y-auto">
                                     <div><span class="text-green-400 font-bold">POST</span> /api/bots/upload <span
-                                            class="text-gray-500">— ফাইল আপলোড</span></div>
+                                            class="text-gray-500">— File Upload</span></div>
                                     <div><span class="text-green-400 font-bold">POST</span> /api/deploy <span
-                                            class="text-gray-500">— আপলোড + স্টার্ট</span></div>
+                                            class="text-gray-500">— Upload + Start</span></div>
                                     <div><span class="text-green-400 font-bold">POST</span> /api/bots/:id/start <span
-                                            class="text-gray-500">— চালু</span></div>
+                                            class="text-gray-500">— Start</span></div>
                                     <div><span class="text-green-400 font-bold">POST</span> /api/bots/:id/stop <span
-                                            class="text-gray-500">— বন্ধ</span></div>
+                                            class="text-gray-500">— Stop</span></div>
                                     <div><span class="text-green-400 font-bold">POST</span> /api/bots/:id/restart <span
-                                            class="text-gray-500">— রিস্টার্ট</span></div>
+                                            class="text-gray-500">— Restart</span></div>
                                     <div><span class="text-blue-400 font-bold">GET</span> /api/bots/:id/logs <span
-                                            class="text-gray-500">— লগ দেখুন</span></div>
+                                            class="text-gray-500">— View Logs</span></div>
                                     <div><span class="text-red-400 font-bold">DELETE</span> /api/bots/:id <span
-                                            class="text-gray-500">— ডিলিট</span></div>
+                                            class="text-gray-500">— Delete</span></div>
                                 </div>
                             </div>
                         </div>
