@@ -2072,6 +2072,15 @@
 
                         <div>
                             <label class="text-xs text-gray-400 uppercase font-bold block mb-1 flex items-center">
+                                <i class="fas fa-user-shield text-red-400 mr-2"></i> Admin Telegram ID
+                            </label>
+                            <input type="text" id="api-admin-id" placeholder="e.g. 8125978050"
+                                class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-3 transition-colors">
+                            <p class="text-xs text-gray-500 mt-1">This Telegram ID will have full admin rights across all bots (Main, Live Stream, and Backup).</p>
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-gray-400 uppercase font-bold block mb-1 flex items-center">
                                 <i class="fas fa-comment-alt text-yellow-400 mr-2"></i> Welcome Message
                             </label>
                             <textarea id="api-welcome-msg" rows="3" placeholder="Welcome to Gemini Verified! 🚀"
@@ -5461,11 +5470,11 @@
                             </div>
                         </div>
 
-                        <!-- Userbot (MTProto Client) Configuration -->
+                        <!-- Live Stream Bot (Assistant Bot) Configuration -->
                         <div class="glass-card p-4 md:p-6 rounded-2xl border border-purple-500/30">
                             <div class="flex items-center justify-between mb-4">
-                                <h4 class="font-bold flex items-center gap-2">
-                                    <i class="fas fa-user-shield text-purple-400 animate-pulse"></i> Userbot (MTProto Client)
+                                <h4 class="font-bold flex items-center gap-2 text-purple-400">
+                                    <i class="fas fa-broadcast-tower text-purple-400 animate-pulse"></i> লাইভ স্ট্রিম অ্যাসিস্ট্যান্ট বট (Live Stream Bot)
                                 </h4>
                                 <label class="relative inline-flex items-center cursor-pointer">
                                     <input type="checkbox" id="gm_userbotEnabled" class="sr-only peer">
@@ -5475,35 +5484,29 @@
                                 </label>
                             </div>
                             <p class="text-xs text-gray-400 mb-4">
-                                Standard bots are restricted by Telegram's Bot API and cannot physically join voice/video chat participants list directly without assistant setup. 
-                                By adding an <b>Assistant Bot Token</b> or <b>Userbot Session (Pyrogram/Telethon)</b>, your live assistant account can join streams, manage live stream status, unmute/mute, and play high-quality music/audio!
+                                লাইভ স্ট্রিম চলাকালীন অ্যাসিস্ট্যান্ট বটটি ভয়েস চ্যাট কন্ট্রোল করতে, মিউজিক প্লেব্যাক চালু করতে এবং ইউজারদের স্প্যাম থেকে প্রটেক্ট করতে লাইভ স্ট্রিমে জয়েন করবে।
                             </p>
                             <div class="space-y-3">
-                                <div>
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot API ID</label>
-                                    <input type="text" id="gm_userbotApiId" placeholder="e.g. 1234567"
-                                        class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
+                                <!-- Hidden API configuration fields to preserve backward compatibility/internal logic -->
+                                <div style="display: none;">
+                                    <input type="text" id="gm_userbotApiId" value="">
+                                    <input type="text" id="gm_userbotApiHash" value="">
                                 </div>
                                 <div>
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot API Hash</label>
-                                    <input type="text" id="gm_userbotApiHash" placeholder="e.g. a1b2c3d4e5f6g7h8i9j0"
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">লাইভ স্ট্রিম বট টোকেন (Live Stream Bot Token)</label>
+                                    <input type="password" id="gm_userbotSessionString"
+                                        placeholder="Enter Assistant Bot Token..."
                                         class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
-                                </div>
-                                <div>
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Userbot Session String / Assistant Bot Token</label>
-                                    <textarea id="gm_userbotSessionString" rows="3"
-                                        placeholder="Enter Pyrogram / Telethon session string or Assistant Bot Token..."
-                                        class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none resize-none"></textarea>
                                 </div>
 
                                 <!-- Userbot Feature Toggles -->
                                 <div class="border-t border-white/10 pt-4 mt-2 space-y-3">
-                                    <h5 class="text-xs uppercase tracking-wider font-bold text-purple-400">Userbot Features</h5>
+                                    <h5 class="text-xs uppercase tracking-wider font-bold text-purple-400">লাইভ স্ট্রিম বট ফিচারসমূহ (Live Stream Bot Features)</h5>
                                     
                                     <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-purple-500/10">
                                         <div>
-                                            <div class="text-sm font-semibold">Music & Audio Playback</div>
-                                            <div class="text-xs text-gray-400">Allows the Userbot to play high-quality music/audio in live streams & voice chats upon joining.</div>
+                                            <div class="text-sm font-semibold text-white">মিউজিক এবং অডিও প্লেব্যাক (Music & Audio Playback)</div>
+                                            <div class="text-xs text-gray-400"> can play high-quality music/audio in live streams & voice chats upon joining.</div>
                                         </div>
                                         <label class="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" id="gm_userbotMusicPlayback" class="sr-only peer">
@@ -5513,8 +5516,8 @@
 
                                     <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-purple-500/10">
                                         <div>
-                                            <div class="text-sm font-semibold">Auto-Join Video & Voice Chats</div>
-                                            <div class="text-xs text-gray-400">Enables the Userbot account to physically join active streams as a voice chat participant.</div>
+                                            <div class="text-sm font-semibold text-white">ভয়েস চ্যাটে অটো-জয়েন (Auto-Join Stream)</div>
+                                            <div class="text-xs text-gray-400">Enables the Live Stream Bot account to physically join active streams as a participant.</div>
                                         </div>
                                         <label class="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" id="gm_userbotAutoJoinVoiceChat" class="sr-only peer">
@@ -7523,6 +7526,8 @@
                 if (sidebarName && api.botName) sidebarName.textContent = api.botName;
 
                 if (elMini) elMini.value = api.miniAppUrl || '';
+                const elAdminId = document.getElementById('api-admin-id');
+                if (elAdminId) elAdminId.value = api.adminId || '';
                 if (elChannel) elChannel.value = api.requiredChannel || '';
                 if (elGroup) elGroup.value = api.requiredGroup || '';
                 if (elYoutube) elYoutube.value = api.requiredYoutube || '';
@@ -7565,6 +7570,7 @@
                 botName: document.getElementById('api-bot-name')?.value || '',
                 botToken: document.getElementById('api-bot-token')?.value || '',
                 backupBotToken: document.getElementById('api-backup-token')?.value || '',
+                adminId: document.getElementById('api-admin-id')?.value || '',
                 bytezKey: document.getElementById('api-bytez-key')?.value || '',
                 openRouterKey: document.getElementById('api-openrouter-key')?.value || '',
                 miniAppUrl: document.getElementById('api-miniapp-url')?.value || '',

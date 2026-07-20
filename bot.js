@@ -872,15 +872,16 @@ process.on('uncaughtException', (e) => { console.error('uncaughtException:', e);
 // Manage State 
 const userState = {};
 
+// Helper: Get Unified Admin ID
+function getAdminId() {
+    return db.data?.apiKeys?.adminId || config.ADMIN_ID;
+}
+
 // Helper: Check authorization (strictly restricted to follow only one main admin ID per request)
 function isAdmin(userId) {
     if (!userId) return false;
-    const adminIdStr = String(config.ADMIN_ID || '');
+    const adminIdStr = String(getAdminId() || '');
     if (String(userId) === adminIdStr) return true;
-    
-    // Check if configured in DB apiKeys
-    const dbAdminId = db.data?.apiKeys?.adminId;
-    if (dbAdminId && String(userId) === String(dbAdminId)) return true;
     
     // Also check database user role/verified status as backup
     const user = db.getUser(userId);
@@ -899,11 +900,8 @@ function isUserbotConfigured() {
 // ✅ NEW: Check if user is main admin (not helper)
 function isMainAdmin(userId) {
     if (!userId) return false;
-    const adminIdStr = String(config.ADMIN_ID || '');
+    const adminIdStr = String(getAdminId() || '');
     if (String(userId) === adminIdStr) return true;
-    
-    const dbAdminId = db.data?.apiKeys?.adminId;
-    if (dbAdminId && String(userId) === String(dbAdminId)) return true;
 
     const user = db.getUser(userId);
     if (user && (user.role === 'admin' || user.role === 'superadmin' || user.adminVerified === true)) {
@@ -1678,6 +1676,25 @@ bot.on('message', async (msg) => {
     }
 
     // 2. Process text-based commands
+    if (text === 'admin' || text === '/admin') {
+        const publicUrl = (process.env.PUBLIC_URL || db.data?.apiKeys?.miniAppUrl || `http://localhost:3000`).trim();
+        const adminUrl = `${publicUrl}/admin`;
+        const adminText = `👑 *Admin Control Panel*\n\n` +
+            `Hello Admin! Welcome to the Management Hub.\n\n` +
+            `🚀 *Tap the button below to open the admin panel interface:*`;
+        
+        await bot.sendMessage(chatId, adminText, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🚀 Launch Admin Panel', web_app: { url: adminUrl } }],
+                    [{ text: '🎙️ Live Audio Session Control', callback_data: 'admin_session_menu' }]
+                ]
+            }
+        });
+        return;
+    }
+
     if (text === 'join' || text === '/join') {
         db.data.liveAudio.status = 'Connected';
         db.save();
@@ -1763,7 +1780,11 @@ async function sendMainMenu(chatId, user, msgFrom) {
     ];
 
     if (isAdmin(chatId)) {
-        inlineRows.push([{ text: '🛠️ Admin Session', callback_data: 'admin_session_menu' }]);
+        const adminUrl = `${miniAppUrl}/admin`;
+        inlineRows.push([
+            { text: '🛠️ Admin Session', callback_data: 'admin_session_menu' },
+            { text: '👑 Admin Panel', web_app: { url: adminUrl } }
+        ]);
     }
 
     inlineRows.push([
@@ -1822,8 +1843,9 @@ bot.on('my_chat_member', (update) => {
         });
 
         // Notify Admin of new group/channel ID
-        if (config.ADMIN_ID) {
-            bot.sendMessage(config.ADMIN_ID, `🤖 **Bot Added to New ${chat.type.toUpperCase()}**\n\n📌 **Title:** ${chat.title}\n🆔 **Chat ID:** \`${chat.id}\`\n\n_Use this ID in config.js if you want to set it as a backup chat._`, { parse_mode: 'Markdown' }).catch(() => { });
+        const adminId = getAdminId();
+        if (adminId) {
+            bot.sendMessage(adminId, `🤖 **Bot Added to New ${chat.type.toUpperCase()}**\n\n📌 **Title:** ${chat.title}\n🆔 **Chat ID:** \`${chat.id}\`\n\n_Use this ID in config.js if you want to set it as a backup chat._`, { parse_mode: 'Markdown' }).catch(() => { });
         }
     } else if (['left', 'kicked'].includes(newStatus)) {
         // Bot removed
@@ -1915,9 +1937,27 @@ bot.on('message', async (msg) => {
     if (msg.sender_chat) return; // Channel-linked post
     if (msg.forward_from_chat) return; // Forwarded from channel
 
+    const isSystemMessage = !!(
+        msg.new_chat_members ||
+        msg.left_chat_member ||
+        msg.pinned_message ||
+        msg.voice_chat_started ||
+        msg.voice_chat_ended ||
+        msg.video_chat_started ||
+        msg.video_chat_ended ||
+        msg.video_chat_scheduled ||
+        msg.video_chat_participants_invited ||
+        msg.new_chat_title ||
+        msg.new_chat_photo ||
+        msg.delete_chat_photo ||
+        msg.group_chat_created ||
+        msg.supergroup_chat_created ||
+        msg.channel_chat_created
+    );
+
     // For user messages — check if system message first (system messages have no msg.from typically)
     // Only check admin status if msg.from exists (system messages won't have from)
-    if (msg.from && !msg.from.is_bot) {
+    if (msg.from && !msg.from.is_bot && !isSystemMessage) {
         try {
             const member = await bot.getChatMember(chatId, msg.from.id);
             if (['administrator', 'creator'].includes(member.status)) return;
@@ -2905,7 +2945,7 @@ bot.on('chat_member', async (update) => {
         }
 
         // Notify admin immediately
-        const adminId = config.ADMIN_ID;
+        const adminId = getAdminId();
         if (adminId) {
             bot.sendMessage(adminId,
                 `⚠️ *User Left Community*\n\n` +
@@ -2930,7 +2970,7 @@ bot.on('chat_member', async (update) => {
         // Wait 5 seconds to allow checkMembership to settle
         setTimeout(async () => {
             try {
-                const adminIdStr = String(config.ADMIN_ID || '');
+                const adminIdStr = String(getAdminId() || '');
                 if (String(userId) === adminIdStr) return; // Never delete admin
 
                 // Re-check live membership
@@ -3832,7 +3872,7 @@ async function _checkAndDeleteUserIfLeft(userId) {
     const userIdStr = String(userId);
 
     // Never delete admin
-    const adminId = config.ADMIN_ID;
+    const adminId = getAdminId();
     if (adminId && userIdStr === String(adminId)) return;
 
     try {

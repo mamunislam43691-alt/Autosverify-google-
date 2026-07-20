@@ -8787,6 +8787,7 @@ app.get('/api/admin/apikeys', (req, res) => {
         apiKeys: {
             botToken: apiKeys.botToken || '',
             backupBotToken: apiKeys.backupBotToken || '',
+            adminId: apiKeys.adminId || '',
             bytezKey: apiKeys.bytezKey || apiKeys.bytezApiKey || '',
             openRouterKey: apiKeys.openRouterKey || apiKeys.openrouterApiKey || '',
             mainboardApiKey: apiKeys.mainboardApiKey || '',
@@ -8809,12 +8810,13 @@ app.get('/api/admin/apikeys', (req, res) => {
 
 // API: Admin - Update API Keys
 app.post('/api/admin/apikeys', (req, res) => {
-    const { botToken, backupBotToken, bytezKey, openRouterKey, mainboardApiKey, smtpLabsKey, gmailClientId, gmailClientSecret, miniAppUrl, requiredChannel, requiredGroup, requiredYoutube, supportLink, adReward, welcomeMessage, welcomeCredits, autoFolderLink, botName } = req.body;
+    const { botToken, backupBotToken, adminId, bytezKey, openRouterKey, mainboardApiKey, smtpLabsKey, gmailClientId, gmailClientSecret, miniAppUrl, requiredChannel, requiredGroup, requiredYoutube, supportLink, adReward, welcomeMessage, welcomeCredits, autoFolderLink, botName } = req.body;
 
     if (!db.data.apiKeys) db.data.apiKeys = {};
 
     if (botToken !== undefined) db.data.apiKeys.botToken = botToken;
     if (backupBotToken !== undefined) db.data.apiKeys.backupBotToken = backupBotToken;
+    if (adminId !== undefined) db.data.apiKeys.adminId = adminId;
     if (bytezKey !== undefined) {
         db.data.apiKeys.bytezKey = bytezKey;
         db.data.apiKeys.bytezApiKey = bytezKey; // sync both naming conventions
