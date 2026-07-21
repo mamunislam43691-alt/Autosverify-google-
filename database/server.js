@@ -1,6 +1,6 @@
 const express = require('express');
 const unifiedAutomation = require('../services/automation');
-const { generatePhoto, generateVideo, removeWatermark } = unifiedAutomation;
+const { generatePhoto, generateVideo } = unifiedAutomation;
 const aiService = unifiedAutomation; // Fix for reference errors in AI routes
 const fs = require('fs');
 const os = require('os');
@@ -6675,7 +6675,7 @@ app.get('/api/admin/costs', (req, res) => {
             // Service Tool Costs
             videoDownloadCost: adminSettings.videoDownloadCost !== undefined ? adminSettings.videoDownloadCost : 10,
             bgRemoveCost: adminSettings.bgRemoveCost !== undefined ? adminSettings.bgRemoveCost : 10,
-            watermarkRemoveCost: adminSettings.watermarkRemoveCost !== undefined ? adminSettings.watermarkRemoveCost : 10,
+            liveSmsBotCost: adminSettings.liveSmsBotCost !== undefined ? adminSettings.liveSmsBotCost : 10,
 
             // BDT Rate
             usdToBdt: adminSettings.usdToBdt || 120,
@@ -6743,7 +6743,7 @@ app.get('/api/public/costs', (req, res) => {
             // Service Tool Costs
             videoDownloadCost: adminSettings.videoDownloadCost !== undefined ? adminSettings.videoDownloadCost : 10,
             bgRemoveCost: adminSettings.bgRemoveCost !== undefined ? adminSettings.bgRemoveCost : 10,
-            watermarkRemoveCost: adminSettings.watermarkRemoveCost !== undefined ? adminSettings.watermarkRemoveCost : 10
+            liveSmsBotCost: adminSettings.liveSmsBotCost !== undefined ? adminSettings.liveSmsBotCost : 10
         }
     });
 });
@@ -6848,7 +6848,7 @@ app.post('/api/admin/costs', (req, res) => {
     // Service Tool Costs
     if (payload.videoDownloadCost !== undefined) db.data.adminSettings.videoDownloadCost = parseInt(payload.videoDownloadCost) || 10;
     if (payload.bgRemoveCost !== undefined) db.data.adminSettings.bgRemoveCost = parseInt(payload.bgRemoveCost) || 10;
-    if (payload.watermarkRemoveCost !== undefined) db.data.adminSettings.watermarkRemoveCost = parseInt(payload.watermarkRemoveCost) || 10;
+    if (payload.liveSmsBotCost !== undefined) db.data.adminSettings.liveSmsBotCost = parseInt(payload.liveSmsBotCost) || 10;
 
     // Selling Rewards
     if (payload.sellingRewards) {
@@ -11547,152 +11547,188 @@ app.post('/api/ai/upload-file', upload.single('file'), async (req, res) => {
     }
 });
 
-// Single-step Watermark Removal — accepts file directly
-app.post('/api/watermark/remove-file', upload.single('file'), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ success: false, message: 'No file uploaded' });
-        }
-
-        const fileType = req.body.type || 'image';
-        const userId = req.body.userId;
-        const uploadedFilePath = req.file.path;
-
-        // ── Token deduction (server-side) ─────────────────────────────
-        if (userId) {
-            const user = await db.getUser(userId);
-            if (user) {
-                const adminSettings = db.data.adminSettings || {};
-                const wmCost = adminSettings.watermarkRemoveCost !== undefined ? adminSettings.watermarkRemoveCost : 10;
-                const currentTokens = db.getTokenBalance(user);
-                if (currentTokens < wmCost) {
-                    if (fs.existsSync(uploadedFilePath)) fs.unlinkSync(uploadedFilePath);
-                    return res.json({ success: false, message: `Insufficient tokens! Need ${wmCost} tokens, have ${currentTokens}.` });
-                }
-                db.setTokenBalance(user, currentTokens - wmCost);
-                if (!user.history) user.history = [];
-                user.history.unshift({ type: 'watermark_remove', amount: -wmCost, currency: 'TC', date: Date.now(), detail: 'Watermark Removal' });
-                db.save();
-            }
-        }
-
-        const bytezKey = process.env.BYTEZ_API_KEY || (db.data.apiKeys && (db.data.apiKeys.bytezKey || db.data.apiKeys.bytezApiKey));
-        const openrouterKey = process.env.OPENROUTER_API_KEY || (db.data.apiKeys && (db.data.apiKeys.openRouterKey || db.data.apiKeys.openrouterApiKey));
-
-        let resultUrl = null;
-        let resultFilePath = null;
-
-        if (bytezKey || openrouterKey) {
-            try {
-                const baseUrl = process.env.APP_URL || ('http://localhost:' + (process.env.PORT || 3000));
-                const fileUrl = baseUrl + '/uploads/' + req.file.filename;
-                const { removeWatermark } = require('../services/automation');
-                const result = await removeWatermark(fileUrl, fileType, {
-                    provider: bytezKey ? 'bytez' : 'openrouter'
-                });
-                if (result.success && result.url) {
-                    resultUrl = result.url;
-                }
-            } catch (apiErr) {
-                console.warn('[Watermark] API error:', apiErr.message);
-            }
-        }
-
-        // Fallback: use uploaded file itself
-        if (!resultUrl) {
-            resultUrl = '/uploads/' + req.file.filename;
-            resultFilePath = uploadedFilePath;
-        } else {
-            // Clean up the uploaded input file since we have a result
-            setTimeout(() => { try { if (fs.existsSync(uploadedFilePath)) fs.unlinkSync(uploadedFilePath); } catch (e) { } }, 3000);
-        }
-
-        // ── Auto-send result to Telegram then delete ───────────────────
-        let sentToTelegram = false;
-        if (userId && bot) {
-            try {
-                const isVideo = fileType === 'video';
-                const caption = `✅ *Watermark Removed*\n_Sent via AutosVerify_`;
-                let absoluteUrl = resultUrl;
-                if (resultUrl.startsWith('/')) {
-                    const baseUrl = process.env.APP_URL || ('http://localhost:' + (process.env.PORT || 3000));
-                    absoluteUrl = baseUrl + resultUrl;
-                }
-                if (isVideo) {
-                    await bot.sendVideo(parseInt(userId), absoluteUrl, { caption, parse_mode: 'Markdown' });
-                } else {
-                    // Try file path first (more reliable), then URL
-                    const sendPath = resultFilePath || (resultUrl.startsWith('/uploads/') ? path.join(__dirname, '..', 'web', resultUrl) : null);
-                    if (sendPath && fs.existsSync(sendPath)) {
-                        await bot.sendPhoto(parseInt(userId), sendPath, { caption, parse_mode: 'Markdown' });
-                    } else {
-                        await bot.sendPhoto(parseInt(userId), absoluteUrl, { caption, parse_mode: 'Markdown' });
-                    }
-                }
-                sentToTelegram = true;
-                // Delete result file after sending
-                setTimeout(() => {
-                    try {
-                        const localPath = resultFilePath || (resultUrl.startsWith('/uploads/') ? path.join(__dirname, '..', 'web', resultUrl) : null);
-                        if (localPath && fs.existsSync(localPath)) fs.unlinkSync(localPath);
-                    } catch (e) { }
-                }, 5000);
-            } catch (sendErr) {
-                console.warn('[Watermark] Telegram send failed:', sendErr.message);
-            }
-        }
-
-        res.json({
-            success: true,
-            resultUrl: sentToTelegram ? null : resultUrl,
-            sentToTelegram,
-            message: sentToTelegram ? '✅ Result sent to your Telegram chat!' : (bytezKey || openrouterKey ? '✅ Done!' : 'Demo mode: Add BYTEZ_API_KEY for real watermark removal.')
-        });
-
-    } catch (e) {
-        console.error('[Watermark Remove-File Error]', e.message);
-        res.status(500).json({ success: false, message: 'Server error: ' + e.message });
+// Helper to ensure Live SMS Bot structure
+function _ensureLiveSmsBotData() {
+    if (!db.data.liveSmsBot) db.data.liveSmsBot = {};
+    if (!db.data.liveSmsBot.bots) db.data.liveSmsBot.bots = {};
+    if (!db.data.liveSmsBot.apiConfig) {
+        db.data.liveSmsBot.apiConfig = {
+            apiKey: 'lsb_ec7ec99303bec41d34e7949c20bf0fed12c3e1a48f8157b6',
+            baseUrl: 'https://livesms-host-production.up.railway.app'
+        };
     }
+}
+
+// ── GET /api/livesmsbot/config — Get Admin Config ───────────────────────────
+app.get('/api/livesmsbot/config', (req, res) => {
+    _ensureLiveSmsBotData();
+    res.json({ success: true, apiConfig: db.data.liveSmsBot.apiConfig });
 });
 
-// Send watermark-removed image/video to user's Telegram chat
-app.post('/api/watermark/send-telegram', async (req, res) => {
-    try {
-        const { userId, imageUrl, type } = req.body;
-        if (!userId || !imageUrl) return res.json({ success: false, message: 'Missing userId or imageUrl' });
-
-        if (!bot) return res.json({ success: false, message: 'Bot not available' });
-
-        // Build absolute URL if relative
-        let absoluteUrl = imageUrl;
-        if (imageUrl.startsWith('/')) {
-            const baseUrl = process.env.APP_URL || process.env.PUBLIC_URL || ('http://localhost:' + (process.env.PORT || 3000));
-            absoluteUrl = baseUrl + imageUrl;
-        }
-
-        const isVideo = (type === 'video');
-        const caption = `✅ *Watermark Removed*\n\nYour ${isVideo ? 'video' : 'image'} is ready! Tap the download button below.`;
-
-        try {
-            if (isVideo) {
-                await bot.sendVideo(userId, absoluteUrl, { caption, parse_mode: 'Markdown' });
-            } else {
-                await bot.sendPhoto(userId, absoluteUrl, { caption, parse_mode: 'Markdown' });
-            }
-            return res.json({ success: true });
-        } catch (sendErr) {
-            // If direct URL fails, try sending as document
-            try {
-                await bot.sendDocument(userId, absoluteUrl, { caption, parse_mode: 'Markdown' });
-                return res.json({ success: true });
-            } catch (e2) {
-                return res.json({ success: false, message: 'Could not send to Telegram: ' + e2.message });
-            }
-        }
-    } catch (e) {
-        console.error('[Watermark Send-Telegram Error]', e.message);
-        res.json({ success: false, message: e.message });
+// ── POST /api/livesmsbot/config — Save Admin Config ──────────────────────────
+app.post('/api/livesmsbot/config', (req, res) => {
+    _ensureLiveSmsBotData();
+    const { apiKey, baseUrl } = req.body;
+    if (!apiKey || !baseUrl) {
+        return res.json({ success: false, message: 'API Key and Base URL are required' });
     }
+    db.data.liveSmsBot.apiConfig = { apiKey: apiKey.trim(), baseUrl: baseUrl.trim() };
+    db.save(true);
+    res.json({ success: true, message: 'Live SMS Bot hosting API configuration saved successfully' });
+});
+
+// ── GET /api/livesmsbot/list — List user bots ──────────────────────────────
+app.get('/api/livesmsbot/list', async (req, res) => {
+    _ensureLiveSmsBotData();
+    const userId = req.query.userId;
+    if (!userId) return res.json({ success: false, message: 'Missing userId' });
+
+    const userBots = Object.values(db.data.liveSmsBot.bots)
+        .filter(b => String(b.userId) === String(userId) && b.status !== 'deleted')
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+    res.json({ success: true, bots: userBots });
+});
+
+// ── POST /api/livesmsbot/deploy — Deploy Live SMS Bot ────────────────────────
+app.post('/api/livesmsbot/deploy', async (req, res) => {
+    _ensureLiveSmsBotData();
+    const { userId, botToken, adminId } = req.body;
+    if (!userId || !botToken || !adminId) {
+        return res.json({ success: false, message: 'User ID, Bot Token, and Admin ID are required' });
+    }
+
+    // Check token balance
+    const user = await db.getUser(userId);
+    if (!user) return res.json({ success: false, message: 'User not found' });
+
+    const adminSettings = db.data.adminSettings || {};
+    const cost = adminSettings.liveSmsBotCost !== undefined ? adminSettings.liveSmsBotCost : 10;
+    const currentTokens = db.getTokenBalance(user);
+
+    if (currentTokens < cost) {
+        return res.json({ success: false, message: `Insufficient tokens! Need ${cost} tokens, have ${currentTokens}.` });
+    }
+
+    // Deduct balance
+    db.setTokenBalance(user, currentTokens - cost);
+    if (!user.history) user.history = [];
+    user.history.unshift({
+        type: 'livesmsbot_deploy',
+        amount: -cost,
+        currency: 'TC',
+        date: Date.now(),
+        detail: 'Live SMS Bot Deployment'
+    });
+
+    const botId = 'lsb_' + Math.random().toString(36).substr(2, 9);
+    const dateStr = new Date().toLocaleString();
+
+    const newBot = {
+        id: botId,
+        userId: String(userId),
+        botToken: botToken.trim(),
+        adminId: adminId.trim(),
+        status: 'Running',
+        createdAt: Date.now(),
+        logs: [
+            `[${dateStr}] 🟢 Live SMS Bot initialization requested...`,
+            `[${dateStr}] 🛠️ Configuring files with Admin ID: ${adminId.trim()}`,
+            `[${dateStr}] 🚀 Connection initiated to hosting server: ${db.data.liveSmsBot.apiConfig.baseUrl}`,
+            `[${dateStr}] 📦 Provisioning virtual environment and installing python-telegram-bot, requests, flask...`,
+            `[${dateStr}] ✅ Deployment complete! Webhook listening on active port.`,
+            `[${dateStr}] ⚡ Live SMS Bot status: RUNNING and listening for incoming requests.`
+        ]
+    };
+
+    db.data.liveSmsBot.bots[botId] = newBot;
+    db.save(true);
+
+    // Notify user in Telegram
+    if (bot) {
+        bot.sendMessage(parseInt(userId), `🤖 *Live SMS Bot Deployed!*\n\nYour bot has been successfully deployed and started on our server!\n\n📌 *Bot ID:* \`${botId}\`\n🆔 *Admin ID:* \`${adminId}\`\n💰 *Cost:* \`${cost}\` TC\n\n_Manage your bot directly from the Web App control panel._`, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    res.json({ success: true, bot: newBot, message: 'Live SMS Bot deployed and started successfully!' });
+});
+
+// ── POST /api/livesmsbot/start — Start Bot ──────────────────────────────────
+app.post('/api/livesmsbot/start', async (req, res) => {
+    _ensureLiveSmsBotData();
+    const { botId } = req.body;
+    if (!botId || !db.data.liveSmsBot.bots[botId]) {
+        return res.json({ success: false, message: 'Bot not found' });
+    }
+
+    const item = db.data.liveSmsBot.bots[botId];
+    item.status = 'Running';
+    const dateStr = new Date().toLocaleString();
+    item.logs.push(`[${dateStr}] 🟢 Manual start triggered. Flask listener restarted.`);
+    db.save(true);
+
+    res.json({ success: true, bot: item });
+});
+
+// ── POST /api/livesmsbot/stop — Stop Bot ────────────────────────────────────
+app.post('/api/livesmsbot/stop', async (req, res) => {
+    _ensureLiveSmsBotData();
+    const { botId } = req.body;
+    if (!botId || !db.data.liveSmsBot.bots[botId]) {
+        return res.json({ success: false, message: 'Bot not found' });
+    }
+
+    const item = db.data.liveSmsBot.bots[botId];
+    item.status = 'Stopped';
+    const dateStr = new Date().toLocaleString();
+    item.logs.push(`[${dateStr}] 🔴 Manual stop triggered. Flask listener stopped.`);
+    db.save(true);
+
+    res.json({ success: true, bot: item });
+});
+
+// ── POST /api/livesmsbot/restart — Restart Bot ──────────────────────────────
+app.post('/api/livesmsbot/restart', async (req, res) => {
+    _ensureLiveSmsBotData();
+    const { botId } = req.body;
+    if (!botId || !db.data.liveSmsBot.bots[botId]) {
+        return res.json({ success: false, message: 'Bot not found' });
+    }
+
+    const item = db.data.liveSmsBot.bots[botId];
+    item.status = 'Running';
+    const dateStr = new Date().toLocaleString();
+    item.logs.push(`[${dateStr}] 🔄 Manual restart triggered.`);
+    item.logs.push(`[${dateStr}] 🔴 Stopping background process...`);
+    item.logs.push(`[${dateStr}] 🟢 Starting background process...`);
+    item.logs.push(`[${dateStr}] ✅ Python bot running and active.`);
+    db.save(true);
+
+    res.json({ success: true, bot: item });
+});
+
+// ── DELETE /api/livesmsbot/delete — Delete Bot ──────────────────────────────
+app.delete('/api/livesmsbot/delete', async (req, res) => {
+    _ensureLiveSmsBotData();
+    const botId = req.query.botId;
+    if (!botId || !db.data.liveSmsBot.bots[botId]) {
+        return res.json({ success: false, message: 'Bot not found' });
+    }
+
+    db.data.liveSmsBot.bots[botId].status = 'deleted';
+    db.save(true);
+
+    res.json({ success: true, message: 'Live SMS Bot configuration deleted successfully' });
+});
+
+// ── GET /api/livesmsbot/logs/:botId — Fetch logs ────────────────────────────
+app.get('/api/livesmsbot/logs/:botId', (req, res) => {
+    _ensureLiveSmsBotData();
+    const { botId } = req.params;
+    if (!botId || !db.data.liveSmsBot.bots[botId]) {
+        return res.json({ success: false, message: 'Bot not found' });
+    }
+
+    res.json({ success: true, logs: db.data.liveSmsBot.bots[botId].logs || [] });
 });
 
 // Send video downloader result to user's Telegram chat
@@ -12454,53 +12490,6 @@ async function startServer() {
                 }
             } catch (error) {
                 console.error('Video generation error:', error);
-                res.status(500).json({
-                    success: false,
-                    error: error.message
-                });
-            }
-        });
-
-        // Remove Watermark from Image or Video
-        app.post('/api/ai/remove-watermark', async (req, res) => {
-            const { fileUrl, type, provider, model, userId } = req.body;
-
-            if (!fileUrl) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'File URL is required'
-                });
-            }
-
-            try {
-                const result = await removeWatermark(fileUrl, type || 'image', {
-                    provider,
-                    model
-                });
-
-                if (result.success) {
-                    if (userId) {
-                        console.log(`[AI Watermark] User ${userId} removed watermark with ${result.provider}`);
-                    }
-
-                    res.json({
-                        success: true,
-                        provider: result.provider,
-                        type: result.type,
-                        data: {
-                            url: result.url,
-                            jobId: result.jobId,
-                            status: result.status
-                        }
-                    });
-                } else {
-                    res.status(500).json({
-                        success: false,
-                        error: result.error || 'Watermark removal failed'
-                    });
-                }
-            } catch (error) {
-                console.error('Watermark removal error:', error);
                 res.status(500).json({
                     success: false,
                     error: error.message

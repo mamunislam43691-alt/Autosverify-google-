@@ -134,53 +134,6 @@ router.post('/api/ai/generate-video', async (req, res) => {
     }
 });
 
-// Remove Watermark from Image
-router.post('/api/ai/remove-watermark', async (req, res) => {
-    const { fileUrl, type, provider, model, userId } = req.body;
-    
-    if (!fileUrl) {
-        return res.status(400).json({
-            success: false,
-            error: 'File URL is required'
-        });
-    }
-    
-    try {
-        const result = await aiService.removeWatermark(fileUrl, type || 'image', {
-            provider,
-            model
-        });
-        
-        if (result.success) {
-            if (userId) {
-                console.log(`[AI Watermark] User ${userId} removed watermark with ${result.provider}`);
-            }
-            
-            res.json({
-                success: true,
-                provider: result.provider,
-                type: result.type,
-                data: {
-                    url: result.url,
-                    jobId: result.jobId,
-                    status: result.status
-                }
-            });
-        } else {
-            res.status(500).json({
-                success: false,
-                error: result.error || 'Watermark removal failed'
-            });
-        }
-    } catch (error) {
-        console.error('Watermark removal error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
 // Check job status (for async operations)
 router.get('/api/ai/job-status/:jobId', async (req, res) => {
     const { jobId } = req.params;

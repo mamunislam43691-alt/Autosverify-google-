@@ -123,28 +123,6 @@ async function openRouterGenerateVideo(prompt, model = 'runway/gen-3', duration 
     }
 }
 
-async function openRouterRemoveWatermark(fileUrl, type = 'image') {
-    const apiKey = getApiKey('OPENROUTER');
-    if (!apiKey) throw new Error('OpenRouter API key not configured');
-
-    try {
-        const endpoint = type === 'video' ? '/videos/watermark-remove' : '/images/watermark-remove';
-        const response = await axios.post(`${OPENROUTER_CONFIG.BASE_URL}${endpoint}`, {
-            file_url: fileUrl
-        }, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        return { success: true, data: response.data.data };
-    } catch (error) {
-        console.error('OpenRouter Watermark Removal Error:', error.message);
-        throw error;
-    }
-}
-
 // Bytez Provider Functions
 async function bytezGenerateImage(prompt, options = {}) {
     const apiKey = getApiKey('BYTEZ');
@@ -205,58 +183,6 @@ async function bytezGenerateVideo(prompt, options = {}) {
         };
     } catch (error) {
         console.error('Bytez Video Generation Error:', error.message);
-        throw error;
-    }
-}
-
-async function bytezRemoveImageWatermark(fileUrl, options = {}) {
-    const apiKey = getApiKey('BYTEZ');
-    if (!apiKey) throw new Error('Bytez API key not configured');
-
-    try {
-        const response = await axios.post(`${BYTEZ_CONFIG.BASE_URL}/jobs/create`, {
-            model: options.model || 'bytez/watermark-remover',
-            input: {
-                image: fileUrl,
-                enhance: options.enhance !== false,
-                denoise: options.denoise || 0.5
-            }
-        }, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        return { job_id: response.data.job_id, status: response.data.status };
-    } catch (error) {
-        console.error('Bytez Image Watermark Removal Error:', error.message);
-        throw error;
-    }
-}
-
-async function bytezRemoveVideoWatermark(fileUrl, options = {}) {
-    const apiKey = getApiKey('BYTEZ');
-    if (!apiKey) throw new Error('Bytez API key not configured');
-
-    try {
-        const response = await axios.post(`${BYTEZ_CONFIG.BASE_URL}/jobs/create`, {
-            model: options.model || 'bytez/watermark-remover',
-            input: {
-                video: fileUrl,
-                enhance: options.enhance !== false,
-                preserve_audio: options.preserveAudio !== false
-            }
-        }, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        return { job_id: response.data.job_id, status: response.data.status };
-    } catch (error) {
-        console.error('Bytez Video Watermark Removal Error:', error.message);
         throw error;
     }
 }
@@ -403,43 +329,6 @@ async function generateVideo(prompt, options = {}) {
     } catch (error) {
         console.error('Video generation error:', error);
         return { success: false, error: error.message, provider };
-    }
-}
-
-async function removeWatermark(fileUrl, type = 'image', options = {}) {
-    const provider = options.provider || defaultProvider;
-
-    try {
-        if (provider === AI_PROVIDERS.OPENROUTER) {
-            const result = await openRouterRemoveWatermark(fileUrl, type);
-            return { success: true, provider: 'openrouter', url: result.data?.url, type };
-        } else {
-            const job = type === 'video'
-                ? await bytezRemoveVideoWatermark(fileUrl, {
-                    model: options.model,
-                    enhance: options.enhance,
-                    preserveAudio: options.preserveAudio
-                })
-                : await bytezRemoveImageWatermark(fileUrl, {
-                    model: options.model,
-                    enhance: options.enhance,
-                    denoise: options.denoise
-                });
-
-            return {
-                success: true,
-                provider: 'bytez',
-                jobId: job.job_id,
-                status: job.status,
-                type,
-                message: 'Watermark removal started. Check status with jobId.',
-                checkStatus: async () => bytezCheckJobStatus(job.job_id),
-                getResult: async () => bytezGetJobResult(job.job_id)
-            };
-        }
-    } catch (error) {
-        console.error('Watermark removal error:', error);
-        return { success: false, error: error.message, provider, type };
     }
 }
 
@@ -673,7 +562,6 @@ module.exports = {
     getAvailableModels,
     generatePhoto,
     generateVideo,
-    removeWatermark,
     checkJobStatus,
     getJobResult,
     OPENROUTER_CONFIG,

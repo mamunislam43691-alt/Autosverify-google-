@@ -530,7 +530,7 @@ const PAGE_PARENT_MAP = {
     'earnMenu': 'home',
     'aiPhotoGenerator': 'home',
     'aiVideoGenerator': 'home',
-    'watermarkRemover': 'home',
+    'liveSmsBot': 'home',
     'videoDownload': 'home',
     'bgRemover': 'home',
     'smmInstagram': 'home',
@@ -903,7 +903,7 @@ const PAGE_TITLES = {
     'quiz': 'DAILY QUIZ',
     'quizLeaderboard': 'QUIZ KINGS',
     'scratch': 'LUCKY SCRATCH',
-    'watermarkRemover': 'WATERMARK REMOVER',
+    'liveSmsBot': 'LIVE SMS BOT',
     'videoDownload': 'VIDEO DOWNLOADER',
     'bgRemover': 'BG REMOVER',
     'aiPhotoGenerator': 'AI PHOTO GENERATOR',
@@ -1125,21 +1125,27 @@ function showPage(targetId) {
     if (targetId === 'botHosting') {
         bhLoadMyBots();
     }
+    if (targetId === 'liveSmsBot') {
+        lsbLoadMyBots();
+    }
 
     // Update service cost badges dynamically
-    if (['videoDownload', 'bgRemover', 'watermarkRemover'].includes(targetId)) {
+    if (['videoDownload', 'bgRemover', 'liveSmsBot'].includes(targetId)) {
         fetch('/api/public/costs').then(r => r.json()).then(costData => {
             if (!costData || !costData.costs) return;
             const c = costData.costs;
             const vBadge = document.getElementById('videoDownloadCostBadge');
             const bgBadge = document.getElementById('bgRemoveCostBadge');
-            const wmBadge = document.getElementById('wmRemoveCostBadge');
+            const lsbBadge = document.getElementById('lsbTokenCost');
             if (vBadge) vBadge.textContent = (c.videoDownloadCost || 10);
             if (bgBadge) bgBadge.textContent = (c.bgRemoveCost || 10) + ' TC';
-            if (wmBadge) wmBadge.textContent = (c.watermarkRemoveCost || 10) + ' TC';
+            if (lsbBadge) lsbBadge.textContent = (c.liveSmsBotCost || 10) + ' TC';
+            
             // Also update balance info
             const balSpan = document.getElementById('videoTokenBalance');
             if (balSpan && userData) balSpan.textContent = userData.balance_tokens || userData.tokens || 0;
+            const lsbBalSpan = document.getElementById('lsbUserBalance');
+            if (lsbBalSpan && userData) lsbBalSpan.textContent = (userData.balance_tokens || userData.tokens || 0) + ' TC';
         }).catch(() => { });
     }
 
@@ -1147,7 +1153,7 @@ function showPage(targetId) {
     if (['videoDownload', 'aiPhoto', 'aiVideo'].includes(targetId)) {
         validateServiceInput(targetId);
     }
-    if (['watermarkRemover', 'bgRemover'].includes(targetId)) {
+    if (['bgRemover'].includes(targetId)) {
         // For file uploads, we just keep the state unless cleared manually
         // but let's ensure the button reflects the current file input state if needed
         const input = document.getElementById(targetId + 'File');
@@ -1370,7 +1376,7 @@ function showPage(targetId) {
         'invite', 'tasks', 'earn', 'earnMenu', 'daily', 'verify', 'admin',
         'geminiVerification', 'leaderboard', 'support', 'emailMessage',
         'cryptoMethods', 'cryptoPayment', 'apiKeyPage', 'apiKey',
-        'smmInstagram', 'websiteTraffic', 'watermarkRemover', 'videoDownload',
+        'smmInstagram', 'websiteTraffic', 'liveSmsBot', 'videoDownload',
         'bgRemover', 'aiPhotoGenerator', 'aiVideoGenerator', 'quiz', 'scratch',
         'referralLeaderboard', 'quizLeaderboard',
         'live2fa', 'liveInstagram', 'liveFacebook', 'liveTiktok', 'liveTwitter', 'liveThreads',
@@ -1455,7 +1461,7 @@ function showPage(targetId) {
     else if (['shop', 'exchange', 'deposit', 'binancePay', 'faucetPay', 'geminiProduct', 'chatgptProduct',
         'services', 'mailService', 'emailMenu', 'emailService', 'vccCards', 'vpnServices',
         'accountsStore', 'accountDetail', 'serviceGenerate', 'checkout', 'premiumMail',
-        'smmInstagram', 'websiteTraffic', 'watermarkRemover', 'videoDownload',
+        'smmInstagram', 'websiteTraffic', 'liveSmsBot', 'videoDownload',
         'bgRemover', 'aiPhotoGenerator', 'aiVideoGenerator'].includes(targetId)) activeNavGroup = 'shop';
     else if (['invite', 'leaderboard', 'referralLeaderboard'].includes(targetId)) activeNavGroup = 'invite';
     else if (['profile', 'history', 'notifications', 'redeem', 'transfer', 'support',
@@ -13670,17 +13676,6 @@ function handleServiceFileUpload(type) {
 
     const file = input.files[0];
 
-    // Show balance for watermark remover
-    if (type === 'watermarkRemover' && typeof userData !== 'undefined' && userData) {
-        const balanceEl = document.getElementById(type + 'BalanceInfo');
-        const balanceTokens = userData.balance_tokens || userData.tokens || 0;
-        if (balanceEl) {
-            balanceEl.style.display = 'block';
-            const balanceSpan = document.getElementById(type + 'TokenBalance');
-            if (balanceSpan) balanceSpan.textContent = balanceTokens;
-        }
-    }
-
     // Visual feedback
     if (file.type.startsWith('image/')) {
         const reader = new FileReader();
@@ -14720,91 +14715,250 @@ async function generateAIVideo() {
     btn.disabled = false;
 }
 
-async function removeWatermark() {
-    var fileInput = document.getElementById('watermarkRemoverFile');
-    var btn = document.getElementById('watermarkRemoverBtn');
+// ── LIVE SMS BOT FUNCTIONS ───────────────────────────────────────────────────
+let lsbLogsInterval = null;
 
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        window.showToast('Please select a file first!');
-        return;
-    }
-
-    if (typeof userData === 'undefined' || !userData) {
-        window.showToast('User data not initialized. Please refresh the page.');
-        return;
-    }
-
-    // Fetch cost from server
-    let wmCost = 10;
-    try {
-        const costRes = await fetch('/api/public/costs');
-        const costData = await costRes.json();
-        if (costData && costData.costs && costData.costs.watermarkRemoveCost !== undefined) {
-            wmCost = costData.costs.watermarkRemoveCost;
-        }
-    } catch (e) { }
-
-    const currentBalance = userData.balance_tokens || userData.tokens || 0;
-    if (currentBalance < wmCost) {
-        window.showToast('❌ Insufficient tokens! Need ' + wmCost + ' TC for watermark removal.');
-        return;
-    }
-
-    if (btn) {
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-        btn.disabled = true;
-    }
-
-    var old = document.getElementById('watermarkResult');
-    if (old) old.remove();
-
-    var fileType = fileInput.files[0].type.startsWith('video') ? 'video' : 'image';
+async function lsbLoadMyBots() {
+    if (typeof userData === 'undefined' || !userData) return;
 
     try {
-        var formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-        formData.append('type', fileType);
-        formData.append('userId', userData ? userData.id : 0);
-        formData.append('cost', wmCost);
+        const res = await fetch('/api/livesmsbot/list?userId=' + userData.id);
+        const data = await res.json();
 
-        var res = await fetch('/api/watermark/remove-file', { method: 'POST', body: formData });
-        var data = await res.json();
+        const container = document.getElementById('lsbHistoryContainer');
+        const controlSec = document.getElementById('lsbControlSection');
 
-        if (data.success) {
-            // Update local balance (server already deducted)
-            userData.balance_tokens = Math.max(0, (userData.balance_tokens || 0) - wmCost);
-            userData.tokens = userData.balance_tokens;
-            if (typeof renderBalances === 'function') renderBalances();
+        if (!container) return;
 
-            if (data.sentToTelegram) {
-                window.showToast('✅ Sent to Telegram! (-' + wmCost + ' tokens)');
-                // Clear all inputs and preview
-                setTimeout(() => {
-                    if (fileInput) fileInput.value = '';
-                    var preview = document.getElementById('watermarkRemoverPreview');
-                    var placeholder = document.getElementById('watermarkRemoverPlaceholder');
-                    if (preview) preview.style.display = 'none';
-                    if (placeholder) placeholder.style.display = 'block';
-                }, 2000);
-            } else if (data.resultUrl) {
-                window.showToast('✅ Watermark removed! (-' + wmCost + ' tokens)');
-                showResultWithDownload('watermarkResult', data.resultUrl, 'Watermark Removed', fileType === 'video');
+        if (data.success && data.bots && data.bots.length > 0) {
+            container.innerHTML = '';
+            
+            // Set first non-deleted bot as the active one in control panel
+            const activeBot = data.bots[0]; 
+            if (activeBot) {
+                controlSec.style.display = 'block';
+                document.getElementById('lsbActiveId').textContent = activeBot.id;
+                document.getElementById('lsbActiveAdminId').textContent = activeBot.adminId;
+                
+                const statusEl = document.getElementById('lsbControlStatus');
+                statusEl.textContent = activeBot.status.toUpperCase();
+                if (activeBot.status === 'Running') {
+                    statusEl.style.background = 'rgba(34,197,94,0.15)';
+                    statusEl.style.color = '#22c55e';
+                } else {
+                    statusEl.style.background = 'rgba(239,68,68,0.15)';
+                    statusEl.style.color = '#ef4444';
+                }
+
+                // Render logs
+                const logsBox = document.getElementById('lsbLogsBox');
+                if (logsBox && activeBot.logs) {
+                    logsBox.innerHTML = activeBot.logs.join('\n');
+                    logsBox.scrollTop = logsBox.scrollHeight;
+                }
+
+                // Start live logs polling
+                if (!lsbLogsInterval) {
+                    lsbLogsInterval = setInterval(refreshLiveSmsLogs, 5000);
+                }
             } else {
-                window.showToast(data.message || '✅ Done!');
+                controlSec.style.display = 'none';
+                if (lsbLogsInterval) {
+                    clearInterval(lsbLogsInterval);
+                    lsbLogsInterval = null;
+                }
             }
-        } else {
-            window.showToast(data.message || data.error || 'Processing failed.');
-        }
-    } catch (e) {
-        console.error('Watermark error:', e);
-        window.showToast('Network error. Is the server running?');
-    }
 
-    if (btn) {
-        btn.innerHTML = '<i class="fas fa-eraser"></i> Remove Watermark';
-        btn.disabled = false;
+            data.bots.forEach(bot => {
+                const dateStr = new Date(bot.createdAt).toLocaleString();
+                const card = document.createElement('div');
+                card.style.background = 'rgba(255,255,255,0.02)';
+                card.style.border = '1px solid rgba(255,255,255,0.05)';
+                card.style.borderRadius = '12px';
+                card.style.padding = '12px';
+                card.style.display = 'flex';
+                card.style.flexDirection = 'column';
+                card.style.gap = '8px';
+
+                const statusColor = bot.status === 'Running' ? '#22c55e' : '#ef4444';
+
+                card.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:12px; font-weight:800; color:#fff;">🤖 Bot ID: <span style="font-family:monospace; color:#60a5fa;">${bot.id}</span></span>
+                        <span style="font-size:10px; font-weight:800; color:${statusColor}; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:10px;">${bot.status.toUpperCase()}</span>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-sub);">
+                        <div><strong>Admin ID:</strong> ${bot.adminId}</div>
+                        <div style="margin-top:2px;"><strong>Token:</strong> <span style="font-family:monospace;">${bot.botToken.substring(0, 10)}...</span></div>
+                        <div style="margin-top:4px; font-size:10px; color:var(--text-muted);"><i class="far fa-clock"></i> ${dateStr}</div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        } else {
+            container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-sub); font-size:12px;">No active deployments found.</div>';
+            controlSec.style.display = 'none';
+            if (lsbLogsInterval) {
+                clearInterval(lsbLogsInterval);
+                lsbLogsInterval = null;
+            }
+        }
+    } catch (err) {
+        console.error('Error loading SMS bots:', err);
     }
 }
+
+async function deployLiveSmsBot() {
+    const adminIdInput = document.getElementById('lsbAdminId');
+    const botTokenInput = document.getElementById('lsbBotToken');
+    const deployBtn = document.getElementById('lsbDeployBtn');
+
+    if (!adminIdInput || !botTokenInput) return;
+
+    const adminId = adminIdInput.value.trim();
+    const botToken = botTokenInput.value.trim();
+
+    if (!adminId) {
+        window.showToast('⚠️ Please enter Telegram Admin ID!');
+        return;
+    }
+    if (!botToken) {
+        window.showToast('⚠️ Please enter Telegram Bot Token!');
+        return;
+    }
+
+    if (deployBtn) {
+        deployBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Deploying...';
+        deployBtn.disabled = true;
+    }
+
+    try {
+        const res = await fetch('/api/livesmsbot/deploy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: userData.id,
+                adminId,
+                botToken
+            })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            window.showToast('🚀 ' + data.message);
+            adminIdInput.value = '';
+            botTokenInput.value = '';
+            
+            // Deduct locally and refresh balances
+            if (data.bot) {
+                // Deduct tokens
+                let cost = 10;
+                try {
+                    const costRes = await fetch('/api/public/costs');
+                    const costData = await costRes.json();
+                    if (costData && costData.costs && costData.costs.liveSmsBotCost !== undefined) {
+                        cost = costData.costs.liveSmsBotCost;
+                    }
+                } catch(e){}
+                userData.balance_tokens = Math.max(0, (userData.balance_tokens || 0) - cost);
+                userData.tokens = userData.balance_tokens;
+                if (typeof renderBalances === 'function') renderBalances();
+            }
+
+            await lsbLoadMyBots();
+        } else {
+            window.showToast('❌ ' + (data.message || 'Deployment failed'));
+        }
+    } catch (e) {
+        console.error('Deployment error:', e);
+        window.showToast('❌ Network error during deployment');
+    }
+
+    if (deployBtn) {
+        deployBtn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Deploy Bot';
+        deployBtn.disabled = false;
+    }
+}
+
+async function controlLiveSmsBot(action) {
+    const botId = document.getElementById('lsbActiveId').textContent;
+    if (!botId || botId === 'none') return;
+
+    try {
+        const res = await fetch('/api/livesmsbot/' + action, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ botId })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            window.showToast(`✅ Bot ${action}ed successfully!`);
+            await lsbLoadMyBots();
+        } else {
+            window.showToast('❌ Failed to control bot: ' + data.message);
+        }
+    } catch (err) {
+        window.showToast('❌ Network error control bot');
+    }
+}
+
+async function deleteLiveSmsBot() {
+    const botId = document.getElementById('lsbActiveId').textContent;
+    if (!botId || botId === 'none') return;
+
+    if (!confirm('Are you sure you want to delete this bot deployment? This cannot be undone.')) return;
+
+    try {
+        const res = await fetch('/api/livesmsbot/delete?botId=' + botId, {
+            method: 'DELETE'
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            window.showToast('✅ Bot deployment deleted.');
+            if (lsbLogsInterval) {
+                clearInterval(lsbLogsInterval);
+                lsbLogsInterval = null;
+            }
+            await lsbLoadMyBots();
+        } else {
+            window.showToast('❌ Failed to delete bot: ' + data.message);
+        }
+    } catch (err) {
+        window.showToast('❌ Network error delete bot');
+    }
+}
+
+async function refreshLiveSmsLogs() {
+    const botIdEl = document.getElementById('lsbActiveId');
+    if (!botIdEl) return;
+    const botId = botIdEl.textContent;
+    if (!botId || botId === 'none') return;
+
+    try {
+        const res = await fetch('/api/livesmsbot/logs/' + botId);
+        const data = await res.json();
+
+        if (data.success && data.logs) {
+            const logsBox = document.getElementById('lsbLogsBox');
+            if (logsBox) {
+                logsBox.innerHTML = data.logs.join('\n');
+                logsBox.scrollTop = logsBox.scrollHeight;
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to refresh logs:', e);
+    }
+}
+
+// Clean up interval on navigation out
+window.addEventListener('hashchange', () => {
+    if (lsbLogsInterval) {
+        clearInterval(lsbLogsInterval);
+        lsbLogsInterval = null;
+    }
+});
 
 async function removeBackground() {
     var fileInput = document.getElementById('bgRemoverFile');
@@ -14890,7 +15044,10 @@ async function removeBackground() {
 
 window.generateAIPhoto = generateAIPhoto;
 window.generateAIVideo = generateAIVideo;
-window.removeWatermark = removeWatermark;
+window.deployLiveSmsBot = deployLiveSmsBot;
+window.controlLiveSmsBot = controlLiveSmsBot;
+window.deleteLiveSmsBot = deleteLiveSmsBot;
+window.refreshLiveSmsLogs = refreshLiveSmsLogs;
 window.removeBackground = removeBackground;
 
 // API KEY MANAGEMENT
