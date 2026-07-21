@@ -1141,11 +1141,20 @@ function showPage(targetId) {
             if (bgBadge) bgBadge.textContent = (c.bgRemoveCost || 10) + ' TC';
             if (lsbBadge) lsbBadge.textContent = (c.liveSmsBotCost || 10) + ' TC';
             
+            // Update cost description with dynamic gems/hour
+            const lsbDesc = document.getElementById('lsbCostDescription');
+            if (lsbDesc) {
+                const gph = c.liveSmsBotGemsPerHour !== undefined ? c.liveSmsBotGemsPerHour : 1;
+                lsbDesc.textContent = `Deploy your Live SMS Forwarder Bot — ${gph} 💎/hr`;
+            }
+            
             // Also update balance info
             const balSpan = document.getElementById('videoTokenBalance');
             if (balSpan && userData) balSpan.textContent = userData.balance_tokens || userData.tokens || 0;
             const lsbBalSpan = document.getElementById('lsbUserBalance');
             if (lsbBalSpan && userData) lsbBalSpan.textContent = (userData.balance_tokens || userData.tokens || 0) + ' TC';
+            const lsbGemBalSpan = document.getElementById('lsbGemBalance');
+            if (lsbGemBalSpan && userData) lsbGemBalSpan.textContent = (userData.Gems || userData.balance_Gems || 0) + ' 💎';
         }).catch(() => { });
     }
 
@@ -5365,6 +5374,12 @@ function renderBalances() {
     // Website Traffic Panel (Gems)
     const trafficGems = document.getElementById('trafficUserGems');
     if (trafficGems) trafficGems.innerText = formattedGems + ' Gems';
+
+    // Live SMS Bot Panel (TC and Gems)
+    const lsbUserBalance = document.getElementById('lsbUserBalance');
+    if (lsbUserBalance) lsbUserBalance.innerText = formattedTokens + ' TC';
+    const lsbGemBalance = document.getElementById('lsbGemBalance');
+    if (lsbGemBalance) lsbGemBalance.innerText = formattedGems + ' 💎';
 }
 
 

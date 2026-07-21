@@ -6671,6 +6671,7 @@ app.get('/api/admin/costs', (req, res) => {
             bhReferPerBot: adminSettings.bhReferPerBot !== undefined ? adminSettings.bhReferPerBot : 2,
             bhGemsPerHour: adminSettings.bhGemsPerHour !== undefined ? adminSettings.bhGemsPerHour : 1,
             bhMaxBots: adminSettings.bhMaxBots !== undefined ? adminSettings.bhMaxBots : 3,
+            liveSmsBotGemsPerHour: adminSettings.liveSmsBotGemsPerHour !== undefined ? adminSettings.liveSmsBotGemsPerHour : 1,
 
             // Service Tool Costs
             videoDownloadCost: adminSettings.videoDownloadCost !== undefined ? adminSettings.videoDownloadCost : 10,
@@ -6740,6 +6741,7 @@ app.get('/api/public/costs', (req, res) => {
             bhReferPerBot: adminSettings.bhReferPerBot !== undefined ? adminSettings.bhReferPerBot : 2,
             bhGemsPerHour: adminSettings.bhGemsPerHour !== undefined ? adminSettings.bhGemsPerHour : 1,
             bhMaxBots: adminSettings.bhMaxBots !== undefined ? adminSettings.bhMaxBots : 3,
+            liveSmsBotGemsPerHour: adminSettings.liveSmsBotGemsPerHour !== undefined ? adminSettings.liveSmsBotGemsPerHour : 1,
             // Service Tool Costs
             videoDownloadCost: adminSettings.videoDownloadCost !== undefined ? adminSettings.videoDownloadCost : 10,
             bgRemoveCost: adminSettings.bgRemoveCost !== undefined ? adminSettings.bgRemoveCost : 10,
@@ -6844,6 +6846,7 @@ app.post('/api/admin/costs', (req, res) => {
     if (payload.bhReferPerBot !== undefined) db.data.adminSettings.bhReferPerBot = parseInt(payload.bhReferPerBot) || 2;
     if (payload.bhGemsPerHour !== undefined) db.data.adminSettings.bhGemsPerHour = parseFloat(payload.bhGemsPerHour) || 1;
     if (payload.bhMaxBots !== undefined) db.data.adminSettings.bhMaxBots = parseInt(payload.bhMaxBots) || 3;
+    if (payload.liveSmsBotGemsPerHour !== undefined) db.data.adminSettings.liveSmsBotGemsPerHour = parseFloat(payload.liveSmsBotGemsPerHour) || 1;
 
     // Service Tool Costs
     if (payload.videoDownloadCost !== undefined) db.data.adminSettings.videoDownloadCost = parseInt(payload.videoDownloadCost) || 10;
@@ -11752,6 +11755,11 @@ app.post('/api/livesmsbot/deploy', async (req, res) => {
         return res.json({ success: false, message: `Insufficient tokens! Need ${cost} tokens, have ${currentTokens}.` });
     }
 
+    const gph = parseFloat(adminSettings.liveSmsBotGemsPerHour !== undefined ? adminSettings.liveSmsBotGemsPerHour : 1) || 1;
+    if (bhGetGems(user) < (gph / 60)) {
+        return res.json({ success: false, message: `Insufficient Gems! Running Live SMS Bot requires at least ${(gph / 60).toFixed(4)} Gems to cover the first minute.` });
+    }
+
     // Read Python template file
     let templateContent;
     try {
@@ -11804,6 +11812,8 @@ app.post('/api/livesmsbot/deploy', async (req, res) => {
         adminId: adminId.trim(),
         status: 'Running',
         createdAt: Date.now(),
+        startedAt: Date.now(),
+        gemsUsed: 0,
         logs: [
             `[${dateStr}] 🟢 Live SMS Bot initialization requested...`,
             `[${dateStr}] 🛠️ Configuring files with Admin ID: ${adminId.trim()}`,
@@ -11816,6 +11826,9 @@ app.post('/api/livesmsbot/deploy', async (req, res) => {
 
     db.data.liveSmsBot.bots[botId] = newBot;
     db.save(true);
+
+    // Start gem deduction interval
+    _startLsbGemInterval(botId, userId);
 
     // Notify user in Telegram
     if (bot) {
@@ -11834,6 +11847,13 @@ app.post('/api/livesmsbot/start', async (req, res) => {
     }
 
     const item = db.data.liveSmsBot.bots[botId];
+
+    // Check user and gem balance
+    const user = await db.getUser(item.userId);
+    const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.liveSmsBotGemsPerHour) ? db.data.adminSettings.liveSmsBotGemsPerHour : 1) || 1;
+    if (!user || bhGetGems(user) < (gph / 60)) {
+        return res.json({ success: false, message: `Insufficient Gems! Need at least ${(gph / 60).toFixed(4)} Gems to start.` });
+    }
     
     // Trigger on hosting server
     const actionRes = await lsbCallServer('start', item);
@@ -11842,9 +11862,13 @@ app.post('/api/livesmsbot/start', async (req, res) => {
     }
 
     item.status = 'Running';
+    item.startedAt = Date.now();
     const dateStr = new Date().toLocaleString();
     item.logs.push(`[${dateStr}] 🟢 Manual start triggered. Hosting process restarted.`);
     db.save(true);
+
+    // Start gem interval
+    _startLsbGemInterval(botId, item.userId);
 
     res.json({ success: true, bot: item });
 });
@@ -11865,7 +11889,14 @@ app.post('/api/livesmsbot/stop', async (req, res) => {
         return res.json({ success: false, message: 'Failed to stop on hosting server: ' + actionRes.error });
     }
 
+    // Stop gem interval
+    if (global._liveSmsBotIntervals && global._liveSmsBotIntervals[botId]) {
+        clearInterval(global._liveSmsBotIntervals[botId]);
+        delete global._liveSmsBotIntervals[botId];
+    }
+
     item.status = 'Stopped';
+    item.startedAt = null;
     const dateStr = new Date().toLocaleString();
     item.logs.push(`[${dateStr}] 🔴 Manual stop triggered. Hosting process stopped.`);
     db.save(true);
@@ -11883,6 +11914,19 @@ app.post('/api/livesmsbot/restart', async (req, res) => {
 
     const item = db.data.liveSmsBot.bots[botId];
 
+    // Check user and gem balance
+    const user = await db.getUser(item.userId);
+    const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.liveSmsBotGemsPerHour) ? db.data.adminSettings.liveSmsBotGemsPerHour : 1) || 1;
+    if (!user || bhGetGems(user) < (gph / 60)) {
+        return res.json({ success: false, message: `Insufficient Gems! Need at least ${(gph / 60).toFixed(4)} Gems to restart.` });
+    }
+
+    // Stop gem interval
+    if (global._liveSmsBotIntervals && global._liveSmsBotIntervals[botId]) {
+        clearInterval(global._liveSmsBotIntervals[botId]);
+        delete global._liveSmsBotIntervals[botId];
+    }
+
     // Trigger on hosting server: stop then start
     const stopRes = await lsbCallServer('stop', item);
     const startRes = await lsbCallServer('start', item);
@@ -11891,12 +11935,16 @@ app.post('/api/livesmsbot/restart', async (req, res) => {
     }
 
     item.status = 'Running';
+    item.startedAt = Date.now();
     const dateStr = new Date().toLocaleString();
     item.logs.push(`[${dateStr}] 🔄 Manual restart triggered.`);
     item.logs.push(`[${dateStr}] 🔴 Stopping background process...`);
     item.logs.push(`[${dateStr}] 🟢 Starting background process...`);
     item.logs.push(`[${dateStr}] ✅ Python bot running and active.`);
     db.save(true);
+
+    // Start gem interval
+    _startLsbGemInterval(botId, item.userId);
 
     res.json({ success: true, bot: item });
 });
@@ -11918,6 +11966,13 @@ app.delete('/api/livesmsbot/delete', async (req, res) => {
     }
 
     db.data.liveSmsBot.bots[botId].status = 'deleted';
+    
+    // Clear and delete interval
+    if (global._liveSmsBotIntervals && global._liveSmsBotIntervals[botId]) {
+        clearInterval(global._liveSmsBotIntervals[botId]);
+        delete global._liveSmsBotIntervals[botId];
+    }
+    
     db.save(true);
 
     res.json({ success: true, message: 'Live SMS Bot configuration deleted successfully' });
@@ -12013,7 +12068,9 @@ app.post('/api/video-downloader/info', async (req, res) => {
         // ── 1. cobalt.tools API (free, no key, direct download URLs) ──
         const tryCobalt = async (videoUrl) => {
             const endpoints = [
-                'https://api.cobalt.tools/'
+                'https://api.cobalt.tools/',
+                'https://co.wuk.sh/',
+                'https://cobalt.sh/'
             ];
             
             // Clean payload compatible with modern Cobalt v10 (Strict validation)
@@ -12518,6 +12575,29 @@ async function startServer() {
                     }
                 }
             });
+
+            // ── Restore gem intervals for Live SMS Bots after restart ─────────────
+            _ensureLiveSmsBotData();
+            if (db.data.liveSmsBot && db.data.liveSmsBot.bots) {
+                let lsbRestored = 0;
+                Object.values(db.data.liveSmsBot.bots).forEach(bot => {
+                    if (bot.status === 'Running' && bot.userId) {
+                        const u = db.getUser(bot.userId);
+                        const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.liveSmsBotGemsPerHour) ? db.data.adminSettings.liveSmsBotGemsPerHour : 1) || 1;
+                        if (!u || bhGetGems(u) < gph / 60) {
+                            bot.status = 'Stopped'; bot.startedAt = null;
+                            console.log(`[LSB RESTORE] Bot ${bot.id} stopped — no gems`);
+                        } else {
+                            _startLsbGemInterval(bot.id, bot.userId);
+                            lsbRestored++;
+                            console.log(`[LSB RESTORE] Gem interval restored for bot ${bot.id}`);
+                        }
+                    }
+                });
+                if (lsbRestored > 0) {
+                    db.save();
+                }
+            }
             // Auto-fix gem sync for all users on startup
             try {
                 const users = getUsersObj();
@@ -13640,10 +13720,10 @@ app.post('/api/video-downloader/copyright', async (req, res) => {
         if (ai) {
             try {
                 const completion = await ai.chat.completions.create({
-                    model: config.OPENAI_MODEL || "gpt-3.5-turbo",
+                    model: config.OPENAI_MODEL || 'gpt-3.5-turbo',
                     messages: [
                         {
-                            role: "system",
+                            role: 'system',
                             content: `You are an advanced digital copyright auditor, specialist in DMCA, YouTube Content ID, TikTok Commercial Music Library rules, Facebook Rights Manager, and Instagram Reels audio copyright policies.
                             Analyze the given video metadata (Title, Description, URL) to perform a highly rigorous, realistic, and completely real copyright risk evaluation.
                             
@@ -13657,33 +13737,33 @@ app.post('/api/video-downloader/copyright', async (req, res) => {
                             - "instagram" status MUST be true (high risk).
                             - You must explicitly explain this TikTok platform-licensing mismatch in the explanations so the user understands why Facebook flags it despite TikTok being fine.
 
-                            Provide clear, accurate, and comprehensive explanations in English.
+                            Provide clear, accurate, and comprehensive explanations in English language. Keep it friendly, detailed, and highly professional for content creators so they understand why some platforms show high-risk while others show safe.
                             Return ONLY a valid JSON object matching this schema exactly:
                             {
                                 "youtube": {
                                     "status": true/false (true if risk of claim, false if safe),
-                                    "explanation": "Detailed YouTube-specific Content ID policy assessment regarding this content"
+                                    "explanation": "Detailed YouTube-specific Content ID policy assessment regarding this content in beautiful, clear English"
                                 },
                                 "tiktok": {
                                     "status": true/false,
-                                    "explanation": "Detailed TikTok audio copyright, commercial library, and muting risk assessment"
+                                    "explanation": "Detailed TikTok audio copyright, commercial library, and muting risk assessment in beautiful, clear English"
                                 },
                                 "facebook": {
                                     "status": true/false,
-                                    "explanation": "Detailed Facebook Rights Manager policy, block, and monetization risk assessment"
+                                    "explanation": "Detailed Facebook Rights Manager policy, block, and monetization risk assessment in beautiful, clear English"
                                 },
                                 "instagram": {
                                     "status": true/false,
-                                    "explanation": "Detailed Instagram Reels audio policies, limited audio list, and strike risk assessment"
+                                    "explanation": "Detailed Instagram Reels audio policies, limited audio list, and strike risk assessment in beautiful, clear English"
                                 }
                             }`
                         },
                         {
-                            role: "user",
+                            role: 'user',
                             content: `Video URL: ${url || ''}\nVideo Title: ${title || 'N/A'}\nVideo Description: ${description || 'N/A'}`
                         }
                     ],
-                    response_format: { type: "json_object" }
+                    response_format: { type: 'json_object' }
                 });
                 scanResult = JSON.parse(completion.choices[0].message.content);
             } catch (aiErr) {
@@ -13748,7 +13828,6 @@ app.post('/api/video-downloader/copyright', async (req, res) => {
     }
 });
 
-// =============================================
 // VIDEO DOWNLOADER — UNLOCK VIDEO DETAILS
 // =============================================
 app.post('/api/video-downloader/unlock-details', async (req, res) => {
@@ -14859,7 +14938,7 @@ function _startBhGemInterval(botId, userId) {
                     await bhCallServer(svr, 'stop', entry).catch(e => console.warn('[BH] Auto-stop failed:', e.message));
                 }
                 _bhAddLog(botId, 'Bot auto-stopped — out of 💎 Gems');
-                db.save();
+                db.save(true);
                 if (bot && u && u.id) {
                     bot.sendMessage(u.id,
                         `⚠️ *Bot Hosting Stopped*\n\nYour bot *${entry.fileName}* was stopped — out of 💎 Gems.\n\nEarn more Gems to restart!`,
@@ -14889,8 +14968,82 @@ function _startBhGemInterval(botId, userId) {
                 });
             }
 
-            db.save();
+            db.save(true);
         } catch (e) { console.error('[BOT HOSTING] Gem tick error:', e.message); }
+    }, 60 * 1000); // Every 1 MINUTE
+}
+
+function _startLsbGemInterval(botId, userId) {
+    if (!global._liveSmsBotIntervals) global._liveSmsBotIntervals = {};
+    if (global._liveSmsBotIntervals[botId]) {
+        clearInterval(global._liveSmsBotIntervals[botId]);
+        delete global._liveSmsBotIntervals[botId];
+    }
+
+    global._liveSmsBotIntervals[botId] = setInterval(async () => {
+        try {
+            _ensureLiveSmsBotData();
+            if (!db.data.liveSmsBot || !db.data.liveSmsBot.bots[botId]) {
+                clearInterval(global._liveSmsBotIntervals[botId]);
+                delete global._liveSmsBotIntervals[botId];
+                return;
+            }
+            const entry = db.data.liveSmsBot.bots[botId];
+            if (entry.status !== 'Running') {
+                clearInterval(global._liveSmsBotIntervals[botId]);
+                delete global._liveSmsBotIntervals[botId];
+                return;
+            }
+
+            const u = await db.getUser(userId || entry.userId);
+            const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.liveSmsBotGemsPerHour) ? db.data.adminSettings.liveSmsBotGemsPerHour : 1) || 1;
+            const gpm = parseFloat((gph / 60).toFixed(6)); // gems per minute
+
+            if (!u || bhGetGems(u) < gpm) {
+                // Out of gems — stop bot immediately
+                entry.status = 'Stopped';
+                entry.startedAt = null;
+                clearInterval(global._liveSmsBotIntervals[botId]);
+                delete global._liveSmsBotIntervals[botId];
+                
+                await lsbCallServer('stop', entry).catch(e => console.warn('[LSB] Auto-stop failed:', e.message));
+                
+                const ts = new Date().toLocaleString();
+                entry.logs.push(`[${ts}] 🔴 Bot auto-stopped — out of 💎 Gems`);
+                db.save(true);
+                
+                if (bot && u && (u.id || u.userId)) {
+                    const notifyId = u.id || u.userId;
+                    bot.sendMessage(parseInt(notifyId),
+                        `⚠️ *Live SMS Bot Stopped*\n\nYour Live SMS Bot was stopped — out of 💎 Gems.\n\nEarn more Gems to restart!`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => { });
+                }
+                return;
+            }
+
+            // Deduct proportional gem for this minute
+            const newGems = Math.max(0, parseFloat((bhGetGems(u) - gpm).toFixed(6)));
+            bhSetGems(u, newGems);
+            entry.gemsUsed = parseFloat(((entry.gemsUsed || 0) + gpm).toFixed(6));
+
+            // Add history entry every 60 ticks (once per hour)
+            if (!entry._tickCount) entry._tickCount = 0;
+            entry._tickCount++;
+            if (entry._tickCount >= 60) {
+                entry._tickCount = 0;
+                if (!u.history) u.history = [];
+                u.history.unshift({
+                    type: 'livesmsbot_hosting',
+                    amount: -gph,
+                    currency: 'Gems',
+                    date: Date.now(),
+                    detail: `Live SMS Bot — (1hr)`
+                });
+            }
+
+            db.save(true);
+        } catch (e) { console.error('[LIVE SMS] Gem tick error:', e.message); }
     }, 60 * 1000); // Every 1 MINUTE
 }
 

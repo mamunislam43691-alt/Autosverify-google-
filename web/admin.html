@@ -338,20 +338,30 @@
                 <div class="nav-item" onclick="nav('history')"><i class="fas fa-history w-5"></i> History</div>
                 <div class="nav-item" onclick="nav('apikeys')"><i class="fas fa-key w-5"></i> API Management</div>
                 <!-- <div class="nav-item" onclick="nav('leaderboard')"><i class="fas fa-trophy w-5"></i> Leaderboard</div> -->
-                <div class="nav-item" onclick="nav('bothosting')"><i class="fas fa-rocket w-5 text-purple-400"></i> Bot
-                    Hosting</div>
+                <!-- HOSTING ACCORDION / GROUP -->
+                <div class="nav-item cursor-default" style="pointer-events: none; opacity: 0.9; font-weight: bold; color: #a78bfa;">
+                    <i class="fas fa-server w-5"></i> Hosting
+                </div>
+                <div class="nav-item pl-8 text-sm" onclick="nav('bothosting')">
+                    <i class="fas fa-rocket w-5 text-purple-400"></i> Bot Hosting
+                </div>
+                <div class="nav-item pl-8 text-sm" onclick="nav('livesmsbothosting')">
+                    <i class="fas fa-sms w-5 text-blue-400"></i> SMS Forwarder Hosting
+                </div>
+
                 <div class="nav-item" onclick="nav('broadcast')"><i class="fas fa-bullhorn w-5"></i> Broadcast</div>
                 <div class="nav-item" onclick="nav('adnetworks')"><i class="fas fa-ad w-5"></i> Ad Networks</div>
                 <div class="nav-item" onclick="nav('providers')"><i class="fas fa-server w-5"></i> Providers</div>
-                <div class="nav-item" onclick="nav('groups')"><i class="fas fa-users-cog w-5"></i> Group Management
-                </div>
                 <div class="nav-item" onclick="nav('settings')" id="settings-menu"><i class="fas fa-cog w-5"></i>
                     Settings</div>
                 <div class="nav-item pl-8 text-sm" onclick="nav('costmanage')" id="cost-manage-submenu">
                     <i class="fas fa-coins w-5 text-orange-400"></i> Cost Manage
                 </div>
+                <div class="nav-item pl-8 text-sm" onclick="nav('groups')" id="groups-submenu">
+                    <i class="fas fa-users-cog w-5 text-blue-400"></i> Group Management
+                </div>
                 <div class="nav-item pl-8 text-sm" onclick="nav('buttons')"><i
-                        class="fas fa-toggle-on w-5 text-blue-400"></i> Button Management
+                        class="fas fa-toggle-on w-5 text-green-400"></i> Button Management
                 </div>
                 <div class="nav-item" onclick="nav('tasks')"><i class="fas fa-tasks w-5"></i> Tasks</div>
                 <div class="nav-item" onclick="nav('codes')"><i class="fas fa-ticket-alt w-5"></i> Promo Codes</div>
@@ -3756,6 +3766,12 @@
                                         class="w-full bg-black/40 border border-white/10 focus:border-purple-500 rounded-lg p-2.5 text-white">
                                     <p class="text-xs text-gray-600 mt-1">Default: 1 Gem/hour</p>
                                 </div>
+                                <div class="bg-black/20 rounded-lg p-4 border border-blue-500/20">
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-2">💬 Live SMS Gems per Hour</label>
+                                    <input type="number" id="conf-live-sms-bot-gems-per-hour" placeholder="1" min="0" step="0.1"
+                                        class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-2.5 text-white">
+                                    <p class="text-xs text-gray-600 mt-1">Default: 1 Gem/hour for Live SMS Forwarder</p>
+                                </div>
                                 <div class="bg-black/20 rounded-lg p-4 border border-purple-500/20">
                                     <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Max Bots per
                                         User (hard cap)</label>
@@ -5435,7 +5451,7 @@
                         <div class="glass-card p-4 md:p-6 rounded-2xl border border-purple-500/30">
                             <div class="flex items-center justify-between mb-4">
                                 <h4 class="font-bold flex items-center gap-2 text-purple-400">
-                                    <i class="fas fa-broadcast-tower text-purple-400 animate-pulse"></i> লাইভ স্ট্রিম অ্যাসিস্ট্যান্ট বট (Live Stream Bot)
+                                    <i class="fas fa-broadcast-tower text-purple-400 animate-pulse"></i> Live Stream Assistant Bot
                                 </h4>
                                 <label class="relative inline-flex items-center cursor-pointer">
                                     <input type="checkbox" id="gm_userbotEnabled" class="sr-only peer">
@@ -5445,7 +5461,7 @@
                                 </label>
                             </div>
                             <p class="text-xs text-gray-400 mb-4">
-                                লাইভ স্ট্রিম চলাকালীন অ্যাসিস্ট্যান্ট বটটি ভয়েস চ্যাট কন্ট্রোল করতে, মিউজিক প্লেব্যাক চালু করতে এবং ইউজারদের স্প্যাম থেকে প্রটেক্ট করতে লাইভ স্ট্রিমে জয়েন করবে।
+                                During live streams, the Assistant Bot will join the stream to control voice chat, enable music playback, and protect users from spam.
                             </p>
                             <div class="space-y-3">
                                 <!-- Hidden API configuration fields to preserve backward compatibility/internal logic -->
@@ -5454,7 +5470,7 @@
                                     <input type="text" id="gm_userbotApiHash" value="">
                                 </div>
                                 <div>
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">লাইভ স্ট্রিম বট টোকেন (Live Stream Bot Token)</label>
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-1">Live Stream Bot Token</label>
                                     <input type="password" id="gm_userbotSessionString"
                                         placeholder="Enter Assistant Bot Token..."
                                         class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
@@ -5462,12 +5478,12 @@
 
                                 <!-- Userbot Feature Toggles -->
                                 <div class="border-t border-white/10 pt-4 mt-2 space-y-3">
-                                    <h5 class="text-xs uppercase tracking-wider font-bold text-purple-400">লাইভ স্ট্রিম বট ফিচারসমূহ (Live Stream Bot Features)</h5>
+                                    <h5 class="text-xs uppercase tracking-wider font-bold text-purple-400">Live Stream Bot Features</h5>
                                     
                                     <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-purple-500/10">
                                         <div>
-                                            <div class="text-sm font-semibold text-white">মিউজিক এবং অডিও প্লেব্যাক (Music & Audio Playback)</div>
-                                            <div class="text-xs text-gray-400"> can play high-quality music/audio in live streams & voice chats upon joining.</div>
+                                            <div class="text-sm font-semibold text-white">Music & Audio Playback</div>
+                                            <div class="text-xs text-gray-400">Can play high-quality music/audio in live streams & voice chats upon joining.</div>
                                         </div>
                                         <label class="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" id="gm_userbotMusicPlayback" class="sr-only peer">
@@ -5477,7 +5493,7 @@
 
                                     <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-purple-500/10">
                                         <div>
-                                            <div class="text-sm font-semibold text-white">ভয়েস চ্যাটে অটো-জয়েন (Auto-Join Stream)</div>
+                                            <div class="text-sm font-semibold text-white">Auto-Join Stream</div>
                                             <div class="text-xs text-gray-400">Enables the Live Stream Bot account to physically join active streams as a participant.</div>
                                         </div>
                                         <label class="relative inline-flex items-center cursor-pointer">
@@ -6087,16 +6103,74 @@
                         </table>
                     </div>
 
-                    <!-- Live SMS Bots Section -->
-                    <div class="mt-8 border-t border-white/10 pt-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-md font-bold text-white flex items-center gap-2">
-                                <i class="fas fa-sms text-blue-400"></i> Live SMS Forwarder Bots
-                            </h3>
-                            <button onclick="loadLiveSmsBotsAdmin()"
-                                class="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1">
+                    </div>
+                </div>
+            </section>
+
+            <!-- LIVE SMS BOT HOSTING ADMIN PAGE -->
+            <section id="livesmsbothosting" class="page" style="display:none;">
+                <div class="glass-card rounded-2xl p-6 mb-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i class="fas fa-sms text-blue-400"></i> Live SMS Forwarding Hosting
+                            </h2>
+                            <p class="text-gray-400 text-sm mt-1">Configure hosting server details and manage all active Live SMS Bots</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="loadLiveSmsHostingData()"
+                                class="bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
                                 <i class="fas fa-sync-alt"></i> Refresh SMS Bots
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- API Config panel for Live SMS Hosting -->
+                    <div class="grid grid-cols-1 gap-6 mb-8">
+                        <div class="glass-card rounded-xl p-5 border border-white/10 bg-[#1e293b]/30">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-sm font-bold text-gray-200 flex items-center gap-2">
+                                    <i class="fas fa-satellite-dish text-blue-400"></i> SMS Hosting Server Configuration
+                                </h3>
+                                <button onclick="openLiveSmsApiConfigModal()"
+                                    class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1">
+                                    <i class="fas fa-edit"></i> Edit Config
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-400 mb-4">Specify the Base URL and API Key for your dedicated Live SMS bot hosting server. Users' bots are compiled and deployed to this hosting instance automatically.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-[10px] text-gray-500 font-bold uppercase mb-1 block">API Key (X-API-Key Header)</label>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="displayLsbApiKey" readonly value="Loading..."
+                                            class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none font-mono">
+                                        <button
+                                            onclick="copyText(document.getElementById('displayLsbApiKey').value, this)"
+                                            class="bg-white/10 hover:bg-white/20 px-3 rounded-lg text-xs transition-all whitespace-nowrap"><i
+                                                class="fas fa-copy"></i> Copy</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Base URL</label>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="displayLsbBaseUrl" readonly value="Loading..."
+                                            class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-gray-300 focus:outline-none font-mono">
+                                        <button
+                                            onclick="copyText(document.getElementById('displayLsbBaseUrl').value, this)"
+                                            class="bg-white/10 hover:bg-white/20 px-3 rounded-lg text-xs transition-all whitespace-nowrap"><i
+                                                class="fas fa-copy"></i> Copy</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live SMS Bots Table -->
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-bold text-gray-200 flex items-center gap-2">
+                                <i class="fas fa-robot text-blue-400"></i> Active User SMS Bots
+                            </h3>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full">
@@ -6105,14 +6179,16 @@
                                         <th class="p-3">User</th>
                                         <th class="p-3">Bot Token</th>
                                         <th class="p-3">Admin ID</th>
+                                        <th class="p-3">Status</th>
+                                        <th class="p-3">Runtime</th>
+                                        <th class="p-3">Gems Used</th>
                                         <th class="p-3">Created At</th>
-                                        <th class="p-3 font-medium">Status</th>
                                         <th class="p-3">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody id="liveSmsBotsTable">
+                                <tbody id="liveSmsBotsPageTable">
                                     <tr>
-                                        <td colspan="6" class="text-center text-gray-500 py-8">Loading...</td>
+                                        <td colspan="6" class="text-center text-gray-500 py-8">Loading Live SMS Bots...</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -7812,6 +7888,8 @@
                         document.getElementById('conf-bh-refer-per-bot').value = c.bhReferPerBot !== undefined ? c.bhReferPerBot : 2;
                     if (document.getElementById('conf-bh-gems-per-hour'))
                         document.getElementById('conf-bh-gems-per-hour').value = c.bhGemsPerHour !== undefined ? c.bhGemsPerHour : 1;
+                    if (document.getElementById('conf-live-sms-bot-gems-per-hour'))
+                        document.getElementById('conf-live-sms-bot-gems-per-hour').value = c.liveSmsBotGemsPerHour !== undefined ? c.liveSmsBotGemsPerHour : 1;
                     if (document.getElementById('conf-bh-max-bots'))
                         document.getElementById('conf-bh-max-bots').value = c.bhMaxBots !== undefined ? c.bhMaxBots : 3;
 
@@ -7983,6 +8061,7 @@
                 bhReferPerBot: getValue('conf-bh-refer-per-bot', 2),
                 bhGemsPerHour: getFloatValue('conf-bh-gems-per-hour', 1),
                 bhMaxBots: getValue('conf-bh-max-bots', 3),
+                liveSmsBotGemsPerHour: getFloatValue('conf-live-sms-bot-gems-per-hour', 1),
 
                 // Service Tool Costs
                 videoDownloadCost: getValue('conf-video-download-cost', 10),
@@ -8197,7 +8276,8 @@
                 'support': 'Support & Chat',
                 'history': 'Global History',
                 'serverlogs': 'Server Problems & Logs',
-                'bothosting': 'Bot Hosting Management'
+                'bothosting': 'Bot Hosting Management',
+                'livesmsbothosting': 'Live SMS Bot Hosting'
             };
 
             const subtitles = {
@@ -8207,7 +8287,9 @@
                 'serverlogs': 'Track and manage server issues',
                 'support': 'Reply to user messages',
                 'deposits': 'Management Section',
-                'history': 'Platform interaction history'
+                'history': 'Platform interaction history',
+                'bothosting': 'Manage hosting servers, API config, and deployed bots',
+                'livesmsbothosting': 'Manage Live SMS Forwarder Bots and hosting configuration'
             };
 
             const pageTitle = document.getElementById('page-title');
@@ -8317,6 +8399,12 @@
                         break;
                     case 'smmorders':
                         if (typeof loadSmmOrdersAdmin === 'function') loadSmmOrdersAdmin();
+                        break;
+                    case 'bothosting':
+                        if (typeof loadHostingData === 'function') loadHostingData();
+                        break;
+                    case 'livesmsbothosting':
+                        if (typeof loadLiveSmsHostingData === 'function') loadLiveSmsHostingData();
                         break;
                     case 'serverlogs':
                         if (typeof fetchServerLogs === 'function') fetchServerLogs();
@@ -16458,6 +16546,33 @@
         </div>
     </div>
 
+    <!-- Edit Live SMS API Config Modal -->
+    <div id="editLsbApiConfigModal" class="modal-overlay"
+        style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:10000; align-items:center; justify-content:center;">
+        <div class="glass-card rounded-2xl p-6 w-full max-w-md mx-4">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><i
+                    class="fas fa-sms text-blue-400"></i> SMS Hosting API Configuration</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-gray-400 font-bold uppercase mb-1 block">API Key</label>
+                    <input id="edit-lsb-api-key" type="text" placeholder="Your hosting server API key"
+                        class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-400">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 font-bold uppercase mb-1 block">Base URL</label>
+                    <input id="edit-lsb-api-url" type="text" placeholder="https://livesms-host-production.up.railway.app"
+                        class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-400">
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="saveLsbApiConfig()"
+                    class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm transition-all">Save Config</button>
+                <button onclick="document.getElementById('editLsbApiConfigModal').style.display='none'"
+                    class="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold text-sm transition-all">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // ========== BOT HOSTING ADMIN FUNCTIONS ==========
         async function loadHostingData() {
@@ -16523,7 +16638,7 @@
                 tbody.innerHTML = bots.map(b => {
                     const statusColor = b.status === 'running' ? 'text-green-400' : b.status === 'deploying' ? 'text-yellow-400' : 'text-gray-400';
                     const statusIcon = b.status === 'running' ? 'fa-circle-play' : b.status === 'deploying' ? 'fa-spinner fa-spin' : 'fa-circle-stop';
-                    const runtime = b.startedAt && b.status === 'running' ? Math.floor((Date.now() - b.startedAt) / 60000) + ' min' : '-';
+                    const runtime = b.startedAt && b.status === 'running' ? ((Date.now() - b.startedAt) / 3600000).toFixed(2) + ' hr' : '-';
                     const userLabel = `${b.userFirstName || 'Unknown'}${b.userUsername ? ' (@' + b.userUsername + ')' : ''}`;
                     const deployErrBadge = b.deployError
                         ? `<div title="${b.deployError}" style="font-size:10px;color:#f59e0b;cursor:pointer;" onclick="showDeployError('${b.id}','${encodeURIComponent(b.deployError || '')}')">⚠ deploy error <i class='fas fa-info-circle'></i></div>`
@@ -16917,14 +17032,153 @@
             }
         }
 
+        // ========== LIVE SMS HOSTING FUNCTIONS ==========
+        async function loadLiveSmsHostingData() {
+            try {
+                // Fetch config
+                const configRes = await fetch('/api/livesmsbot/config');
+                const configData = await configRes.json();
+                if (configData.success && configData.apiConfig) {
+                    const keyEl = document.getElementById('displayLsbApiKey');
+                    const urlEl = document.getElementById('displayLsbBaseUrl');
+                    if (keyEl) keyEl.value = configData.apiConfig.apiKey || '';
+                    if (urlEl) urlEl.value = configData.apiConfig.baseUrl || '';
+                }
+
+                // Fetch list of user bots
+                const tbody = document.getElementById('liveSmsBotsPageTable');
+                if (!tbody) return;
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8"><i class="fas fa-spinner fa-spin mr-1"></i> Loading Live SMS Bots...</td></tr>';
+                const res = await fetch('/api/admin/livesmsbot/list');
+                const data = await res.json();
+                if (!data.success || !data.bots || data.bots.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8">No Live SMS Forwarder Bots found.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.bots.map(b => {
+                    const statusColor = b.status === 'Running' ? 'text-green-400' : b.status === 'Stopped' ? 'text-gray-400' : 'text-red-400';
+                    const statusIcon = b.status === 'Running' ? 'fa-circle-play' : 'fa-circle-stop';
+                    const createdAt = new Date(b.createdAt).toLocaleString();
+                    const runtime = b.startedAt && b.status === 'Running' ? ((Date.now() - b.startedAt) / 3600000).toFixed(2) + ' hr' : '-';
+                    const gemsUsed = b.gemsUsed !== undefined ? parseFloat(b.gemsUsed).toFixed(4) : '0';
+                    
+                    return `<tr class="border-b border-white/5">
+                        <td class="p-3">
+                            <div class="text-sm font-bold text-white">${b.userEmail || 'Unknown'}</div>
+                            <div class="text-xs text-gray-400">#${b.userId}</div>
+                        </td>
+                        <td class="p-3">
+                            <div class="text-xs font-mono max-w-[200px] truncate text-gray-300" title="${b.botToken}">${b.botToken}</div>
+                        </td>
+                        <td class="p-3">
+                            <span class="text-xs bg-white/10 px-2 py-1 rounded-lg font-mono">${b.adminId}</span>
+                        </td>
+                        <td class="p-3">
+                            <span class="${statusColor} text-sm font-bold flex items-center gap-1">
+                                <i class="fas ${statusIcon}"></i> ${b.status}
+                            </span>
+                        </td>
+                        <td class="p-3 text-sm text-gray-300">
+                            ${runtime}
+                        </td>
+                        <td class="p-3 text-sm text-yellow-400">
+                            ${gemsUsed} 💎
+                        </td>
+                        <td class="p-3 text-xs text-gray-400">
+                            ${createdAt}
+                        </td>
+                        <td class="p-3">
+                            <div class="flex gap-1.5 flex-wrap font-sans">
+                                ${b.status !== 'Running' ? 
+                                    `<button onclick="adminStartSmsBotPage('${b.id}')" class="text-xs bg-green-600 hover:bg-green-700 text-white px-2.5 py-1.5 rounded-lg font-bold transition-all" title="Start Bot"><i class="fas fa-play"></i> Start</button>` : 
+                                    `<button onclick="adminStopSmsBotPage('${b.id}')" class="text-xs bg-orange-600 hover:bg-orange-700 text-white px-2.5 py-1.5 rounded-lg font-bold transition-all" title="Stop Bot"><i class="fas fa-stop"></i> Stop</button>`
+                                }
+                                <button onclick="adminRestartSmsBotPage('${b.id}')" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-lg font-bold transition-all" title="Restart Bot"><i class="fas fa-sync-alt"></i> Restart</button>
+                                <button onclick="adminViewSmsBotLogsPage('${b.id}')" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1.5 rounded-lg font-bold transition-all" title="View Logs"><i class="fas fa-terminal"></i> Logs</button>
+                                <button onclick="adminDeleteSmsBotPage('${b.id}')" class="text-xs bg-red-600 hover:bg-red-700 text-white px-2.5 py-1.5 rounded-lg font-bold transition-all" title="Delete Bot"><i class="fas fa-trash"></i> Delete</button>
+                            </div>
+                        </td>
+                    </tr>`;
+                }).join('');
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-red-400 py-8">Error loading Live SMS Bots.</td></tr>';
+                console.error(err);
+            }
+        }
+
+        async function openLiveSmsApiConfigModal() {
+            try {
+                const res = await fetch('/api/livesmsbot/config');
+                const data = await res.json();
+                if (data.success && data.apiConfig) {
+                    document.getElementById('edit-lsb-api-key').value = data.apiConfig.apiKey || '';
+                    document.getElementById('edit-lsb-api-url').value = data.apiConfig.baseUrl || '';
+                }
+                document.getElementById('editLsbApiConfigModal').style.display = 'flex';
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function saveLsbApiConfig() {
+            const apiKey = document.getElementById('edit-lsb-api-key').value.trim();
+            const baseUrl = document.getElementById('edit-lsb-api-url').value.trim();
+            if (!apiKey || !baseUrl) {
+                return alert('API Key and Base URL are required');
+            }
+            try {
+                const res = await fetch('/api/livesmsbot/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey, baseUrl })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('editLsbApiConfigModal').style.display = 'none';
+                    showToast('✅ Live SMS Hosting config saved successfully!');
+                    await loadLiveSmsHostingData();
+                } else {
+                    alert('❌ ' + (data.message || 'Failed to save configuration'));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function adminStartSmsBotPage(botId) {
+            await adminStartSmsBot(botId);
+            loadLiveSmsHostingData();
+        }
+
+        async function adminStopSmsBotPage(botId) {
+            await adminStopSmsBot(botId);
+            loadLiveSmsHostingData();
+        }
+
+        async function adminRestartSmsBotPage(botId) {
+            await adminRestartSmsBot(botId);
+            loadLiveSmsHostingData();
+        }
+
+        async function adminViewSmsBotLogsPage(botId) {
+            await adminViewSmsBotLogs(botId);
+        }
+
+        async function adminDeleteSmsBotPage(botId) {
+            await adminDeleteSmsBot(botId);
+            loadLiveSmsHostingData();
+        }
+
         // Load on nav
         const _origAdminNav = typeof nav === 'function' ? nav : null;
         document.addEventListener('DOMContentLoaded', function () {
-            // Hook into nav function to load hosting data when navigating to bothosting
+            // Hook into nav function to load hosting data when navigating to bothosting or livesmsbothosting
             const origNav = window.nav;
             window.nav = function (page) {
                 if (origNav) origNav(page);
                 if (page === 'bothosting') setTimeout(loadHostingData, 100);
+                if (page === 'livesmsbothosting') setTimeout(loadLiveSmsHostingData, 100);
             };
         });
     </script>
