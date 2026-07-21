@@ -11559,6 +11559,132 @@ function _ensureLiveSmsBotData() {
     }
 }
 
+// ── Call external Live SMS Bot hosting server API ───────────────────────────
+async function lsbCallServer(action, botEntry, fileBuffer, fileName) {
+    _ensureLiveSmsBotData();
+    const config = db.data.liveSmsBot.apiConfig;
+    const base = (config.baseUrl || '').replace(/\/$/, '');
+    if (!base) return { success: false, error: 'No Live SMS Bot hosting server URL configured by admin' };
+
+    const apiKey = config.apiKey || '';
+    const jsonHeaders = { 'X-API-Key': apiKey, 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+    const extId = botEntry.externalId || botEntry.id;
+
+    // Helper: try multiple endpoints, return first success
+    async function tryPost(paths, body, headers, timeout) {
+        let lastErr = '';
+        for (const p of paths) {
+            try {
+                const r = await axios.post(base + p, body, { headers, timeout: timeout || 20000 });
+                return r;
+            } catch (e) {
+                lastErr = e.response ? `${e.response.status} ${JSON.stringify(e.response.data).substring(0, 100)}` : e.message;
+                console.warn('[LSB] POST ' + p + ' failed:', lastErr);
+            }
+        }
+        throw new Error(lastErr);
+    }
+    async function tryDelete(paths, headers, timeout) {
+        let lastErr = '';
+        for (const p of paths) {
+            try {
+                const r = await axios.delete(base + p, { headers, timeout: timeout || 20000 });
+                return r;
+            } catch (e) {
+                lastErr = e.response ? `${e.response.status}` : e.message;
+            }
+        }
+        throw new Error(lastErr);
+    }
+    async function tryGet(paths, headers, timeout) {
+        let lastErr = '';
+        for (const p of paths) {
+            try {
+                const r = await axios.get(base + p, { headers, timeout: timeout || 15000 });
+                return r;
+            } catch (e) {
+                lastErr = e.response ? `${e.response.status}` : e.message;
+            }
+        }
+        throw new Error(lastErr);
+    }
+
+    try {
+        if (action === 'deploy') {
+            const FormData = require('form-data');
+            const form = new FormData();
+            const fn = fileName || 'bot.py';
+            form.append('file', fileBuffer, { filename: fn, contentType: 'application/octet-stream' });
+            form.append('name', fn);
+            form.append('language', 'python');
+            form.append('autoRestart', 'true');
+            const fh = { ...form.getHeaders(), 'X-API-Key': apiKey, 'Authorization': `Bearer ${apiKey}` };
+
+            const resp = await (async () => {
+                const paths = ['/api/deploy', '/api/bots/upload', '/api/bots/deploy', '/bots/upload', '/deploy'];
+                let lastErr = '';
+                for (const p of paths) {
+                    try {
+                        return await axios.post(base + p, form, { headers: fh, timeout: 60000 });
+                    } catch (e) {
+                        lastErr = e.response ? `${e.response.status} ${JSON.stringify(e.response.data).substring(0, 100)}` : e.message;
+                        console.warn('[LSB] deploy ' + p + ' failed:', lastErr);
+                    }
+                }
+                throw new Error(lastErr);
+            })();
+
+            const data = resp.data;
+            console.log('[LSB] Deploy response:', JSON.stringify(data).substring(0, 200));
+            const returnedId = data.botId || data.id || data._id || data.bot_id || null;
+            return { success: true, data, botId: returnedId };
+        }
+
+        if (action === 'start') {
+            const resp = await tryPost(
+                [`/api/bots/${extId}/start`, `/api/bots/${extId}/run`, `/bots/${extId}/start`],
+                {}, jsonHeaders
+            );
+            return { success: true, data: resp.data };
+        }
+
+        if (action === 'stop') {
+            const resp = await tryPost(
+                [`/api/bots/${extId}/stop`, `/api/bots/${extId}/kill`, `/bots/${extId}/stop`],
+                {}, jsonHeaders
+            );
+            return { success: true, data: resp.data };
+        }
+
+        if (action === 'delete') {
+            const resp = await tryDelete(
+                [`/api/bots/${extId}`, `/bots/${extId}`, `/api/bots/${extId}/delete`],
+                jsonHeaders
+            );
+            return { success: true, data: resp.data };
+        }
+
+        if (action === 'logs') {
+            const resp = await tryGet(
+                [`/api/bots/${extId}/logs`, `/api/bots/${extId}/log`, `/bots/${extId}/logs`],
+                jsonHeaders
+            );
+            return { success: true, data: resp.data };
+        }
+
+    } catch (e) {
+        let errMsg = e.message;
+        if (e.response) {
+            const d = e.response.data;
+            errMsg = (typeof d === 'object' && d) ? (d.error || d.message || d.detail || `HTTP ${e.response.status}`) :
+                (typeof d === 'string' && !d.includes('<html') ? d.substring(0, 200) : `HTTP ${e.response.status}`);
+        }
+        console.error('[LSB] ' + action + ' error:', errMsg);
+        return { success: false, error: errMsg };
+    }
+    return { success: false, error: 'Unknown action: ' + action };
+}
+
 // ── GET /api/livesmsbot/config — Get Admin Config ───────────────────────────
 app.get('/api/livesmsbot/config', (req, res) => {
     _ensureLiveSmsBotData();
@@ -11575,6 +11701,22 @@ app.post('/api/livesmsbot/config', (req, res) => {
     db.data.liveSmsBot.apiConfig = { apiKey: apiKey.trim(), baseUrl: baseUrl.trim() };
     db.save(true);
     res.json({ success: true, message: 'Live SMS Bot hosting API configuration saved successfully' });
+});
+
+// ── GET /api/admin/livesmsbot/list — List all bots for admin ──────────────────
+app.get('/api/admin/livesmsbot/list', async (req, res) => {
+    _ensureLiveSmsBotData();
+    const botsList = [];
+    for (const b of Object.values(db.data.liveSmsBot.bots)) {
+        if (b.status === 'deleted') continue;
+        const user = await db.getUser(b.userId);
+        botsList.push({
+            ...b,
+            userEmail: user?.email || user?.username || 'Unknown User'
+        });
+    }
+    botsList.sort((a, b) => b.createdAt - a.createdAt);
+    res.json({ success: true, bots: botsList });
 });
 
 // ── GET /api/livesmsbot/list — List user bots ──────────────────────────────
@@ -11610,6 +11752,39 @@ app.post('/api/livesmsbot/deploy', async (req, res) => {
         return res.json({ success: false, message: `Insufficient tokens! Need ${cost} tokens, have ${currentTokens}.` });
     }
 
+    // Read Python template file
+    let templateContent;
+    try {
+        templateContent = fs.readFileSync(path.join(__dirname, 'livesmsbot_template.py'), 'utf8');
+    } catch (err) {
+        console.error('Failed to read livesmsbot_template.py:', err.message);
+        return res.json({ success: false, message: 'Server configuration error: Template bot file missing.' });
+    }
+
+    const botId = 'lsb_' + Math.random().toString(36).substr(2, 9);
+    const dateStr = new Date().toLocaleString();
+
+    // Customize the template content with user input
+    let customBotCode = templateContent
+        .replace(
+            'BOT_TOKEN = "8767560640:AAGn-ZqD6rjyyARPBBpTKDfA2m520mHbNlU"',
+            `BOT_TOKEN = "${botToken.trim().replace(/"/g, '\\"')}"`
+        )
+        .replace(
+            'ADMIN_CHAT_ID = 8901260078',
+            `ADMIN_CHAT_ID = ${adminId.trim()}`
+        );
+
+    const fileBuffer = Buffer.from(customBotCode, 'utf8');
+
+    // Deploy to Live SMS Bot hosting server
+    const deployRes = await lsbCallServer('deploy', { id: botId }, fileBuffer, `livesmsbot_${botId}.py`);
+    if (!deployRes.success) {
+        return res.json({ success: false, message: 'Hosting server deployment failed: ' + deployRes.error });
+    }
+
+    const externalId = deployRes.botId || botId;
+
     // Deduct balance
     db.setTokenBalance(user, currentTokens - cost);
     if (!user.history) user.history = [];
@@ -11621,11 +11796,9 @@ app.post('/api/livesmsbot/deploy', async (req, res) => {
         detail: 'Live SMS Bot Deployment'
     });
 
-    const botId = 'lsb_' + Math.random().toString(36).substr(2, 9);
-    const dateStr = new Date().toLocaleString();
-
     const newBot = {
         id: botId,
+        externalId: externalId,
         userId: String(userId),
         botToken: botToken.trim(),
         adminId: adminId.trim(),
@@ -11634,7 +11807,7 @@ app.post('/api/livesmsbot/deploy', async (req, res) => {
         logs: [
             `[${dateStr}] 🟢 Live SMS Bot initialization requested...`,
             `[${dateStr}] 🛠️ Configuring files with Admin ID: ${adminId.trim()}`,
-            `[${dateStr}] 🚀 Connection initiated to hosting server: ${db.data.liveSmsBot.apiConfig.baseUrl}`,
+            `[${dateStr}] 🚀 Deploying to hosting server: ${db.data.liveSmsBot.apiConfig.baseUrl}`,
             `[${dateStr}] 📦 Provisioning virtual environment and installing python-telegram-bot, requests, flask...`,
             `[${dateStr}] ✅ Deployment complete! Webhook listening on active port.`,
             `[${dateStr}] ⚡ Live SMS Bot status: RUNNING and listening for incoming requests.`
@@ -11661,9 +11834,16 @@ app.post('/api/livesmsbot/start', async (req, res) => {
     }
 
     const item = db.data.liveSmsBot.bots[botId];
+    
+    // Trigger on hosting server
+    const actionRes = await lsbCallServer('start', item);
+    if (!actionRes.success) {
+        return res.json({ success: false, message: 'Failed to start on hosting server: ' + actionRes.error });
+    }
+
     item.status = 'Running';
     const dateStr = new Date().toLocaleString();
-    item.logs.push(`[${dateStr}] 🟢 Manual start triggered. Flask listener restarted.`);
+    item.logs.push(`[${dateStr}] 🟢 Manual start triggered. Hosting process restarted.`);
     db.save(true);
 
     res.json({ success: true, bot: item });
@@ -11678,9 +11858,16 @@ app.post('/api/livesmsbot/stop', async (req, res) => {
     }
 
     const item = db.data.liveSmsBot.bots[botId];
+
+    // Trigger on hosting server
+    const actionRes = await lsbCallServer('stop', item);
+    if (!actionRes.success) {
+        return res.json({ success: false, message: 'Failed to stop on hosting server: ' + actionRes.error });
+    }
+
     item.status = 'Stopped';
     const dateStr = new Date().toLocaleString();
-    item.logs.push(`[${dateStr}] 🔴 Manual stop triggered. Flask listener stopped.`);
+    item.logs.push(`[${dateStr}] 🔴 Manual stop triggered. Hosting process stopped.`);
     db.save(true);
 
     res.json({ success: true, bot: item });
@@ -11695,6 +11882,14 @@ app.post('/api/livesmsbot/restart', async (req, res) => {
     }
 
     const item = db.data.liveSmsBot.bots[botId];
+
+    // Trigger on hosting server: stop then start
+    const stopRes = await lsbCallServer('stop', item);
+    const startRes = await lsbCallServer('start', item);
+    if (!startRes.success) {
+        return res.json({ success: false, message: 'Failed to restart on hosting server: ' + startRes.error });
+    }
+
     item.status = 'Running';
     const dateStr = new Date().toLocaleString();
     item.logs.push(`[${dateStr}] 🔄 Manual restart triggered.`);
@@ -11714,6 +11909,14 @@ app.delete('/api/livesmsbot/delete', async (req, res) => {
         return res.json({ success: false, message: 'Bot not found' });
     }
 
+    const item = db.data.liveSmsBot.bots[botId];
+
+    // Trigger delete on hosting server
+    const deleteRes = await lsbCallServer('delete', item);
+    if (!deleteRes.success) {
+        console.warn('[LSB] Delete on hosting server failed or already deleted:', deleteRes.error);
+    }
+
     db.data.liveSmsBot.bots[botId].status = 'deleted';
     db.save(true);
 
@@ -11721,14 +11924,37 @@ app.delete('/api/livesmsbot/delete', async (req, res) => {
 });
 
 // ── GET /api/livesmsbot/logs/:botId — Fetch logs ────────────────────────────
-app.get('/api/livesmsbot/logs/:botId', (req, res) => {
+app.get('/api/livesmsbot/logs/:botId', async (req, res) => {
     _ensureLiveSmsBotData();
     const { botId } = req.params;
     if (!botId || !db.data.liveSmsBot.bots[botId]) {
         return res.json({ success: false, message: 'Bot not found' });
     }
 
-    res.json({ success: true, logs: db.data.liveSmsBot.bots[botId].logs || [] });
+    const item = db.data.liveSmsBot.bots[botId];
+    const dbLogs = item.logs || [];
+
+    // Try fetching external server logs
+    let extLogs = '';
+    const logsRes = await lsbCallServer('logs', item);
+    if (logsRes.success && logsRes.data) {
+        const d = logsRes.data;
+        if (typeof d === 'string' && d.trim()) extLogs = d;
+        else if (d && (d.logs || d.log || d.output)) extLogs = d.logs || d.log || d.output;
+    }
+
+    let combinedLogs = [...dbLogs];
+    if (extLogs) {
+        combinedLogs.push('=== Hosting Server Real-time Output ===');
+        const lines = typeof extLogs === 'string' ? extLogs.split('\n') : extLogs;
+        if (Array.isArray(lines)) {
+            combinedLogs = combinedLogs.concat(lines.filter(l => l.trim()));
+        } else {
+            combinedLogs.push(String(extLogs));
+        }
+    }
+
+    res.json({ success: true, logs: combinedLogs });
 });
 
 // Send video downloader result to user's Telegram chat
