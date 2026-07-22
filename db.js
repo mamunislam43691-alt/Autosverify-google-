@@ -756,6 +756,43 @@ class Database {
     }
 
     getGroups() {
+        if (!this.data.groups) this.data.groups = {};
+
+        // Auto-register configured required channel/group if set in API keys or settings
+        const apiKeys = this.data.apiKeys || {};
+        const settings = this.data.settings || {};
+
+        const reqChannel = apiKeys.requiredChannel || settings.requiredChannel || '';
+        const reqGroup = apiKeys.requiredGroup || settings.requiredGroup || '';
+
+        if (reqChannel) {
+            const key = reqChannel.startsWith('@') ? reqChannel : ('@' + reqChannel);
+            if (!this.data.groups[key] && !this.data.groups[reqChannel]) {
+                this.data.groups[key] = {
+                    id: key,
+                    title: reqChannel,
+                    type: 'channel',
+                    memberCount: 0,
+                    addedAt: Date.now(),
+                    lastActive: Date.now()
+                };
+            }
+        }
+
+        if (reqGroup) {
+            const key = reqGroup.startsWith('@') ? reqGroup : ('@' + reqGroup);
+            if (!this.data.groups[key] && !this.data.groups[reqGroup]) {
+                this.data.groups[key] = {
+                    id: key,
+                    title: reqGroup,
+                    type: 'group',
+                    memberCount: 0,
+                    addedAt: Date.now(),
+                    lastActive: Date.now()
+                };
+            }
+        }
+
         return Object.values(this.data.groups || {});
     }
 

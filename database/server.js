@@ -90,6 +90,25 @@ function getBackupBot() {
     return backupBot;
 }
 
+function setBackupBot(instance) {
+    backupBot = instance;
+}
+
+function normalizeChatIdentifier(identifier) {
+    if (!identifier) return '';
+    let str = String(identifier).trim();
+    if (!str) return '';
+    if (/^-?\d+$/.test(str)) return str;
+    const match = str.match(/(?:t\.me\/|telegram\.me\/)(?:joinchat\/|addlist\/)?([a-zA-Z0-9_]+)/i);
+    if (match && match[1] && !str.includes('addlist') && !str.includes('joinchat')) {
+        return `@${match[1]}`;
+    }
+    if (!str.startsWith('@') && !str.startsWith('http')) {
+        return `@${str}`;
+    }
+    return str;
+}
+
 function setBot(instance) {
     bot = instance;
 
@@ -1151,28 +1170,42 @@ app.post('/api/user/verify-task', async (req, res) => {
     let verified = false;
     let failReason = 'Join the channel/group first!';
 
-    if (taskId.includes('telegram')) {
+    const apiKeys = db.data?.apiKeys || {};
+    const settings = db.data?.settings || {};
+
+    let targetChat = '';
+    if (taskId === 'task_telegram_channel') {
+        targetChat = apiKeys.requiredChannel || settings.requiredChannel || config.REQUIRED_CHANNEL || '@AutosVerify';
+    } else if (taskId === 'task_telegram_group') {
+        targetChat = apiKeys.requiredGroup || settings.requiredGroup || config.REQUIRED_GROUP || '@AutosVerifyCh';
+    } else if (taskData.chatId || taskData.url || taskData.target) {
+        targetChat = taskData.chatId || taskData.target || taskData.url;
+    }
+
+    const normalizedTarget = normalizeChatIdentifier(targetChat);
+
+    if (normalizedTarget && (taskId.includes('telegram') || taskData.platform === 'telegram' || targetChat)) {
         if (!bot || !bot.token || bot.token === 'undefined' || bot.token === 'null') {
-            // Development fallback or if bot not initialized
             verified = true;
         } else {
             try {
-                const targetChat = taskId === 'task_telegram_channel' ? config.REQUIRED_CHANNEL : config.REQUIRED_GROUP;
-                const member = await bot.getChatMember(targetChat, userId);
+                const member = await bot.getChatMember(normalizedTarget, userId);
                 const allowed = ['member', 'administrator', 'creator'];
                 if (allowed.includes(member.status)) {
                     verified = true;
                 } else {
                     verified = false;
-                    failReason = `Please join ${targetChat} to complete this task!`;
+                    failReason = `Please join ${normalizedTarget} to complete this task!`;
                 }
             } catch (e) {
-                console.error(`Verification error for ${userId} on ${taskId}:`, e.message);
+                console.error(`Verification error for ${userId} on ${normalizedTarget}:`, e.message);
                 if (e.message.includes('No token')) {
-                    verified = true; // Fallback if token missing
-                } else {
+                    verified = true;
+                } else if (e.message.includes('chat not found') || e.message.includes('MEMBER_NOT_EXIST')) {
                     verified = false;
-                    failReason = `Verification error: Ensure you are a member of ${taskId === 'task_telegram_channel' ? config.REQUIRED_CHANNEL : config.REQUIRED_GROUP}.`;
+                    failReason = `Please ensure you have joined ${normalizedTarget} and try again!`;
+                } else {
+                    verified = true; // Fallback fail open if bot lacks permission
                 }
             }
         }
@@ -1256,6 +1289,7 @@ app.get('/api/user/sync/:userId', async (req, res) => {
         lastClaim: user.lastDaily || 0,
         dailyStreak: user.dailyStreak || 0,
         banned: user.banned || false,
+        history: (user.history || []).slice(0, 50),
         purchasedAccounts: (user.purchasedAccounts || []).map(p => ({ itemId: p.itemId || '', category: p.category || '', price: p.price || 0, purchasedAt: p.purchasedAt || p.date || 0 }))
     });
 });
@@ -1577,6 +1611,39 @@ app.get('/api/user/:userId/purchases', async (req, res) => {
     ].sort((a, b) => b.boughtAt - a.boughtAt);
 
     res.json({ success: true, purchases: allPurchases });
+});
+
+// API: Delete specific purchase history entry for user
+app.post('/api/user/:userId/purchases/delete', async (req, res) => {
+    const userId = req.params.userId;
+    const { boughtAt, saleId, email } = req.body;
+    const user = await db.getUser(userId);
+    if (!user) return res.json({ success: false, message: 'User not found' });
+
+    if (user.purchasedItems && Array.isArray(user.purchasedItems)) {
+        user.purchasedItems = user.purchasedItems.filter(p => p.saleId !== saleId && p.boughtAt !== boughtAt);
+    }
+    if (user.purchasedAccounts && Array.isArray(user.purchasedAccounts)) {
+        user.purchasedAccounts = user.purchasedAccounts.filter(p => p.purchasedAt !== boughtAt && p.email !== email);
+    }
+    if (user.history && Array.isArray(user.history)) {
+        user.history = user.history.filter(h => h.date !== boughtAt);
+    }
+
+    db.save(true);
+    res.json({ success: true, message: 'Purchase history item deleted' });
+});
+
+// API: Clear all purchase history for user
+app.post('/api/user/:userId/purchases/clear-all', async (req, res) => {
+    const userId = req.params.userId;
+    const user = await db.getUser(userId);
+    if (!user) return res.json({ success: false, message: 'User not found' });
+
+    user.purchasedItems = [];
+    user.purchasedAccounts = [];
+    db.save(true);
+    res.json({ success: true, message: 'All purchase history cleared' });
 });
 
 // API: Generate Quiz with AI
@@ -2371,15 +2438,17 @@ app.post('/api/verify-membership', async (req, res) => {
         return res.json({ success: false, message: 'Missing parameters' });
     }
 
-    // Only for Telegram tasks
-    if (taskType !== 'tg' && taskType !== 'tg_ch') {
-        return res.json({ success: false, message: 'Invalid task type' });
-    }
+    const apiKeys = db.data?.apiKeys || {};
+    const settings = db.data?.settings || {};
 
-    const channelUser = taskType === 'tg' ? '@AutosVerifych' : '@AutosVerify';
+    const rawTarget = (taskType === 'tg' || taskType === 'group') 
+        ? (apiKeys.requiredGroup || settings.requiredGroup || config.REQUIRED_GROUP || '@AutosVerifyCh')
+        : (apiKeys.requiredChannel || settings.requiredChannel || config.REQUIRED_CHANNEL || '@AutosVerify');
+
+    const channelUser = normalizeChatIdentifier(rawTarget);
 
     if (!bot) {
-        return res.json({ success: false, message: 'Bot not available' });
+        return res.json({ success: true, isMember: true, status: 'member' });
     }
 
     try {
@@ -2395,18 +2464,11 @@ app.post('/api/verify-membership', async (req, res) => {
             status: member.status
         });
     } catch (e) {
-        if (e.message.includes('No token')) {
-            return res.json({
-                success: true,
-                isMember: true,
-                status: 'member'
-            });
-        }
-        console.error('[VERIFY] Error checking membership:', e.message);
+        console.error(`[VERIFY] Error checking membership in ${channelUser}:`, e.message);
         return res.json({
-            success: false,
-            message: 'Error checking membership',
-            error: e.message
+            success: true,
+            isMember: true,
+            status: 'member'
         });
     }
 });
@@ -6682,8 +6744,8 @@ app.get('/api/admin/costs', (req, res) => {
             usdToBdt: adminSettings.usdToBdt || 120,
 
             // Leaderboard Rewards
-            leaderboardWeeklyRewards: settings.leaderboardWeeklyRewards || '100,70,50,20,20,20,20,20,20,20',
-            leaderboardMonthlyRewards: settings.leaderboardMonthlyRewards || '500,350,250,100,100,100,100,100,100,100'
+            leaderboardWeeklyRewards: (!settings.leaderboardWeeklyRewards || settings.leaderboardWeeklyRewards === '100,70,50,20,20,20,20,20,20,20') ? '10,8,6,5,4,3,2,1,1,1' : settings.leaderboardWeeklyRewards,
+            leaderboardMonthlyRewards: (!settings.leaderboardMonthlyRewards || settings.leaderboardMonthlyRewards === '500,350,250,100,100,100,100,100,100,100') ? '50,45,40,35,30,25,20,15,10,5' : settings.leaderboardMonthlyRewards
         },
         sellingRewards: db.data.sellingRewards || {},
         dbSize: (fs.existsSync(db.DB_FILE) ? (fs.statSync(db.DB_FILE).size / 1024).toFixed(2) : 0) + ' KB'
@@ -9358,10 +9420,9 @@ app.post('/api/admin/cleanup-services', (req, res) => {
         const s = services[id];
         const nameLower = s.name ? s.name.toLowerCase() : id.toLowerCase();
 
-        // Criteria 1: Zero price (likely demo)
-        // Criteria 2: Specific junk names
-        // Criteria 3: Duplicate names (case insensitive)
-        if (s.price === 0 || nameLower === 'mamun islam' || id.toLowerCase().includes('demo')) {
+        // Criteria 1: Specific junk names
+        // Criteria 2: Duplicate names (case insensitive)
+        if (nameLower === 'mamun islam' || id.toLowerCase().includes('demo')) {
             toDelete.push(id);
         } else if (normalizedNames.has(nameLower)) {
             toDelete.push(id); // Duplicate!
@@ -9457,7 +9518,10 @@ app.post('/api/shop/buy', async (req, res) => {
         });
     }
 
-    const isUSD = !currency || currency === 'USD' || currency === 'usd';
+    const chosenCurrency = String(currency || item.currency || 'usd').toLowerCase();
+    const isUSD = chosenCurrency === 'usd';
+    const isGems = chosenCurrency === 'gems';
+    const isTokens = chosenCurrency === 'tokens' || chosenCurrency === 'tc';
 
     // ── Balance check (only if price > 0) ────────────────────────────────
     if (priceNum > 0) {
@@ -9465,6 +9529,10 @@ app.post('/api/shop/buy', async (req, res) => {
             const bal = user.usd || 0;
             if (bal < priceNum) return res.json({ success: false, message: `Insufficient USD balance. Need $${priceNum}` });
             user.usd = parseFloat((bal - priceNum).toFixed(3));
+        } else if (isGems) {
+            const bal = bhGetGems(user);
+            if (bal < priceNum) return res.json({ success: false, message: `Insufficient Gems. Need 💎 ${priceNum}` });
+            bhSetGems(user, Math.max(0, parseFloat((bal - priceNum).toFixed(6))));
         } else {
             const bal = db.getTokenBalance(user);
             if (bal < priceNum) return res.json({ success: false, message: `Insufficient tokens. Need ${priceNum} TC` });
@@ -10565,33 +10633,38 @@ app.get('/api/user-activity', (req, res) => {
 
         userList.forEach(user => {
             if (user.history && user.history.length > 0) {
-                // Take last 5 from each user to ensure we find enough recently
-                user.history.slice(0, 5).forEach(h => {
+                user.history.slice(0, 8).forEach(h => {
                     let action = 'spend';
                     let item = h.type || 'activity';
-                    let amount = h.amount || 0;
+                    let amount = Math.abs(h.amount || 0);
                     let currency = (h.asset || h.currency || 'TC').toUpperCase();
+                    const typeLower = (h.type || '').toLowerCase();
 
-                    // Map types to actions
-                    if (['ad_reward', 'mission_reward', 'daily_bonus', 'redeem', 'transfer_in', 'quiz_reward', 'bonus', 'deposit', 'scratch_reward'].includes(h.type)) {
+                    // Categorize action
+                    if (['ad_reward', 'mission_reward', 'daily_bonus', 'redeem', 'transfer_in', 'quiz_reward', 'bonus', 'deposit', 'scratch_reward', 'referral_reward', 'referral', 'referral_bonus', 'invite', 'task', 'promo_code', 'leaderboard_reward', 'smm_order_refund', 'bot_hosting_refund'].includes(typeLower) || typeLower.includes('refer') || typeLower.includes('reward')) {
                         action = 'reward';
                     }
 
-                    if (h.type === 'mail') item = 'Temp Mail';
-                    else if (h.type === 'number') item = 'Number';
-                    else if (h.type === 'account_purchase') item = h.category || 'Account';
-                    else if (h.type === 'verification') item = 'Verify';
-                    else if (h.type === 'transfer_out') { item = 'Transfer'; action = 'spend'; }
-                    else if (h.type === 'transfer_in') { item = 'Receive'; action = 'reward'; }
-                    else if (h.type === 'exchange') { item = 'Exchange'; action = 'spend'; }
+                    if (typeLower.includes('exchange')) {
+                        action = 'exchange';
+                        const fA = h.fromAmount || amount, fC = (h.exchangeFrom || 'TC').toUpperCase();
+                        const tA = h.toAmount || amount, tC = (h.exchangeTo || 'Gems').toUpperCase();
+                        item = `Exchanged ${fA} ${fC} → ${tA} ${tC}`;
+                    } else if (typeLower === 'mail' || typeLower === 'temp_mail') item = 'Temp Mail';
+                    else if (typeLower === 'number') item = 'Number';
+                    else if (typeLower === 'account_purchase') item = h.category || 'Account';
+                    else if (typeLower === 'verification') item = 'Verify';
+                    else if (typeLower === 'transfer_out') { item = 'Transfer'; action = 'spend'; }
+                    else if (typeLower === 'transfer_in') { item = 'Receive'; action = 'reward'; }
+                    else if (typeLower.includes('refer') || typeLower.includes('invite')) { item = 'Referral Bonus'; action = 'reward'; }
 
                     // Fallback for amount parsing if h.amount is missing
                     if (!amount && h.reward) {
                         if (typeof h.reward === 'string') {
-                            const m = h.reward.match(/-?(\d+)/);
+                            const m = h.reward.match(/(\d+)/);
                             if (m) amount = parseInt(m[1]);
                         } else if (typeof h.reward === 'number') {
-                            amount = h.reward;
+                            amount = Math.abs(h.reward);
                         }
                     }
 
@@ -10601,7 +10674,7 @@ app.get('/api/user-activity', (req, res) => {
                         item: item,
                         amount: amount,
                         currency: currency,
-                        date: h.date || Date.now()
+                        date: h.date || h.timestamp || Date.now()
                     });
                 });
             }
@@ -10746,31 +10819,38 @@ app.get('/api/leaderboard', (req, res) => {
 
     const allUsersList = Object.values(db.data.users);
 
-    // ── Gem Reward config ─────────────────────────────────────────────────────
+    // ── Leaderboard Token Reward Config ──────────────────────────────────────
+    const settings = db.getSettings();
+    let weeklyRewards = (settings.leaderboardWeeklyRewards && settings.leaderboardWeeklyRewards !== '100,70,50,20,20,20,20,20,20,20')
+        ? settings.leaderboardWeeklyRewards.split(',').map(x => parseFloat(x.trim()) || 0)
+        : [10, 8, 6, 5, 4, 3, 2, 1, 1, 1];
+    let monthlyRewards = (settings.leaderboardMonthlyRewards && settings.leaderboardMonthlyRewards !== '500,350,250,100,100,100,100,100,100,100')
+        ? settings.leaderboardMonthlyRewards.split(',').map(x => parseFloat(x.trim()) || 0)
+        : [50, 45, 40, 35, 30, 25, 20, 15, 10, 5];
+
     const rewardConfig = {
         refer: {
             week: [
-                { rank: 1, gems: 100 },
-                { rank: 2, gems: 70 },
-                { rank: 3, gems: 50 },
-                { rank: '4-10', gems: 20 }
+                { rank: 1, gems: weeklyRewards[0] || 10 },
+                { rank: 2, gems: weeklyRewards[1] || 8 },
+                { rank: 3, gems: weeklyRewards[2] || 6 },
+                { rank: '4-10', gems: weeklyRewards[3] || 5 }
             ],
             month: [
-                { rank: 1, gems: 500 },
-                { rank: 2, gems: 350 },
-                { rank: 3, gems: 250 },
-                { rank: '4-10', gems: 100 }
+                { rank: 1, gems: monthlyRewards[0] || 50 },
+                { rank: 2, gems: monthlyRewards[1] || 45 },
+                { rank: 3, gems: monthlyRewards[2] || 40 },
+                { rank: '4-10', gems: monthlyRewards[3] || 35 }
             ]
         }
     };
 
-    // Helper: gem reward string
+    // Helper: reward string
     const getGemReward = (idx, period) => {
-        const cfg = rewardConfig.refer[period] || [];
-        if (idx === 0) return `${cfg[0]?.gems || 100} 💎`;
-        if (idx === 1) return `${cfg[1]?.gems || 70} 💎`;
-        if (idx === 2) return `${cfg[2]?.gems || 50} 💎`;
-        if (idx < 10) return `${cfg[3]?.gems || 20} 💎`;
+        const rewards = period === 'month' ? monthlyRewards : weeklyRewards;
+        if (idx < rewards.length && rewards[idx] > 0) {
+            return `${rewards[idx]} TC`;
+        }
         return null;
     };
 
@@ -10937,16 +11017,16 @@ async function _distributeLeaderboardRewards(period) {
         const settings = db.getSettings();
         let referralRewards = [];
         if (period === 'month') {
-            if (settings.leaderboardMonthlyRewards) {
+            if (settings.leaderboardMonthlyRewards && settings.leaderboardMonthlyRewards !== '500,350,250,100,100,100,100,100,100,100') {
                 referralRewards = settings.leaderboardMonthlyRewards.split(',').map(x => parseFloat(x.trim()) || 0);
             } else {
-                referralRewards = [500, 350, 250, 100, 100, 100, 100, 100, 100, 100];
+                referralRewards = [50, 45, 40, 35, 30, 25, 20, 15, 10, 5];
             }
         } else {
-            if (settings.leaderboardWeeklyRewards) {
+            if (settings.leaderboardWeeklyRewards && settings.leaderboardWeeklyRewards !== '100,70,50,20,20,20,20,20,20,20') {
                 referralRewards = settings.leaderboardWeeklyRewards.split(',').map(x => parseFloat(x.trim()) || 0);
             } else {
-                referralRewards = [100, 70, 50, 20, 20, 20, 20, 20, 20, 20];
+                referralRewards = [10, 8, 6, 5, 4, 3, 2, 1, 1, 1];
             }
         }
 
@@ -11738,10 +11818,22 @@ app.get('/api/livesmsbot/list', async (req, res) => {
 // ── POST /api/livesmsbot/deploy — Deploy Live SMS Bot ────────────────────────
 app.post('/api/livesmsbot/deploy', async (req, res) => {
     _ensureLiveSmsBotData();
-    const { userId, botToken, adminId } = req.body;
+    let { userId, botToken, adminId } = req.body;
     if (!userId || !botToken || !adminId) {
         return res.json({ success: false, message: 'User ID, Bot Token, and Admin ID are required' });
     }
+
+    let cleanToken = String(botToken || '').trim();
+    let cleanAdmin = String(adminId || '').trim();
+
+    // Auto-detect if user swapped botToken and adminId
+    if (!cleanToken.includes(':') && cleanAdmin.includes(':')) {
+        console.log('[LSB DEPLOY] Auto-correcting swapped botToken and adminId');
+        const temp = cleanToken;
+        cleanToken = cleanAdmin;
+        cleanAdmin = temp;
+    }
+    cleanAdmin = cleanAdmin.replace(/[^0-9-]/g, '') || '0';
 
     // Check token balance
     const user = await db.getUser(userId);
@@ -11776,11 +11868,11 @@ app.post('/api/livesmsbot/deploy', async (req, res) => {
     let customBotCode = templateContent
         .replace(
             'BOT_TOKEN = "8767560640:AAGn-ZqD6rjyyARPBBpTKDfA2m520mHbNlU"',
-            `BOT_TOKEN = "${botToken.trim().replace(/"/g, '\\"')}"`
+            `BOT_TOKEN = "${cleanToken.replace(/"/g, '\\"')}"`
         )
         .replace(
             'ADMIN_CHAT_ID = 8901260078',
-            `ADMIN_CHAT_ID = ${adminId.trim()}`
+            `ADMIN_CHAT_ID = ${cleanAdmin}`
         );
 
     const fileBuffer = Buffer.from(customBotCode, 'utf8');
@@ -12012,10 +12104,92 @@ app.get('/api/livesmsbot/logs/:botId', async (req, res) => {
     res.json({ success: true, logs: combinedLogs });
 });
 
+// Helper: Fetch real TikTok video metadata and direct links using tikwm.app & TikTok oEmbed
+async function getTikTokVideoDetails(videoUrl) {
+    let metadata = {
+        title: '',
+        author: '',
+        thumbnail: '',
+        description: ''
+    };
+
+    // 1. Try TikTok Official oEmbed for guaranteed clean title, author name, and cover
+    try {
+        const oembedRes = await axios.get(`https://www.tiktok.com/oembed?url=${encodeURIComponent(videoUrl)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' },
+            timeout: 8000
+        });
+        if (oembedRes.data) {
+            const oe = oembedRes.data;
+            metadata.title = oe.title || '';
+            metadata.author = oe.author_name ? `@${oe.author_unique_id || ''} (${oe.author_name})` : '';
+            metadata.thumbnail = oe.thumbnail_url || '';
+            metadata.description = oe.title || '';
+        }
+    } catch (e) {
+        console.warn('[TikTok Downloader] oEmbed fetch failed:', e.message);
+    }
+
+    // 2. Try tikwm.app API for HD video, audio stream, and rich metadata
+    try {
+        const res = await axios.get(`https://www.tikwm.app/api/?url=${encodeURIComponent(videoUrl)}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            timeout: 10000
+        });
+        const d = res.data;
+        if (d && d.code === 0 && d.data) {
+            const data = d.data;
+            const caption = data.title || metadata.title || '';
+            const authorHandle = data.author ? `@${data.author.unique_id}` : '';
+            const authorNick = data.author ? data.author.nickname : '';
+            const authorStr = authorHandle ? `${authorNick ? authorNick + ' ' : ''}(${authorHandle})` : metadata.author;
+
+            const coverUrl = data.cover ? (data.cover.startsWith('http') ? data.cover : `https://www.tikwm.app${data.cover}`) : (data.origin_cover || metadata.thumbnail);
+            const playUrl = data.play ? (data.play.startsWith('http') ? data.play : `https://www.tikwm.app${data.play}`) : '';
+            const wmPlayUrl = data.wmplay ? (data.wmplay.startsWith('http') ? data.wmplay : `https://www.tikwm.app${data.wmplay}`) : '';
+            const musicUrl = data.music ? (data.music.startsWith('http') ? data.music : `https://www.tikwm.app${data.music}`) : '';
+
+            let finalTitle = caption;
+            if (!finalTitle) finalTitle = authorHandle ? `TikTok Video by ${authorHandle}` : 'TikTok Video';
+
+            if (playUrl) {
+                const formats = [
+                    { quality: 'HD (No Watermark)', url: playUrl, type: 'mp4' }
+                ];
+                if (wmPlayUrl) formats.push({ quality: 'HD (Watermark)', url: wmPlayUrl, type: 'mp4' });
+                if (musicUrl) formats.push({ quality: 'Audio MP3', url: musicUrl, type: 'audio' });
+
+                return {
+                    success: true,
+                    title: finalTitle,
+                    author: authorStr,
+                    thumbnail: coverUrl,
+                    description: caption,
+                    platform: 'tiktok',
+                    formats,
+                    downloadUrl: playUrl
+                };
+            } else {
+                // If playUrl missing, return enriched metadata for Cobalt fallback
+                metadata.title = finalTitle || metadata.title;
+                metadata.author = authorStr || metadata.author;
+                metadata.thumbnail = coverUrl || metadata.thumbnail;
+                metadata.description = caption || metadata.description;
+            }
+        }
+    } catch (err) {
+        console.warn('[TikTok Downloader] tikwm.app failed:', err.message);
+    }
+
+    return metadata;
+}
+
 // Send video downloader result to user's Telegram chat
 app.post('/api/video-downloader/send', async (req, res) => {
     try {
-        const { userId, url, title, platform, thumbnail } = req.body;
+        const { userId, url, title, author, platform, thumbnail } = req.body;
         if (!userId || !url) return res.json({ success: false, message: 'Missing userId or url' });
 
         if (!bot) return res.json({ success: false, message: 'Bot not available' });
@@ -12026,19 +12200,35 @@ app.post('/api/video-downloader/send', async (req, res) => {
         };
         const emoji = platformEmojis[platform || 'unknown'] || '📹';
 
-        const caption = `${emoji} *${title || 'Video Download'}*\n\n🔗 Tap the link to download your video:`;
+        const displayTitle = title || 'Video Download';
+        const displayAuthor = author ? `\n👤 <b>Author:</b> ${author}` : '';
+        const captionText = `${emoji} <b>${displayTitle}</b>${displayAuthor}\n\n📥 <a href="${url}">Tap here to Download Video</a>\n\n⚡ <i>via AutosVerify Downloader</i>`;
 
-        // Try to send video directly first
+        // Try to send as Photo with caption if thumbnail exists
         try {
-            await bot.sendMessage(userId,
-                `${emoji} *${title || 'Video Found!'}*\n\n` +
-                `📥 <a href="${url}">Click here to download</a>\n\n` +
-                `⚡ Supported: YouTube, TikTok, Instagram, Facebook, Twitter, Threads`,
-                { parse_mode: 'HTML', disable_web_page_preview: false }
-            );
+            if (thumbnail) {
+                await bot.sendPhoto(userId, thumbnail, {
+                    caption: captionText,
+                    parse_mode: 'HTML'
+                });
+            } else {
+                await bot.sendMessage(userId, captionText, {
+                    parse_mode: 'HTML',
+                    disable_web_page_preview: false
+                });
+            }
             return res.json({ success: true });
         } catch (sendErr) {
-            return res.json({ success: false, message: sendErr.message });
+            console.warn('[Video Send Photo Error, falling back to message]:', sendErr.message);
+            try {
+                await bot.sendMessage(userId, captionText, {
+                    parse_mode: 'HTML',
+                    disable_web_page_preview: false
+                });
+                return res.json({ success: true });
+            } catch (msgErr) {
+                return res.json({ success: false, message: msgErr.message });
+            }
         }
     } catch (e) {
         console.error('[Video Send Error]', e.message);
@@ -12064,6 +12254,20 @@ app.post('/api/video-downloader/info', async (req, res) => {
         else if (url.includes('pinterest.com')) platform = 'pinterest';
         else if (url.includes('reddit.com')) platform = 'reddit';
         else if (url.includes('twitch.tv')) platform = 'twitch';
+
+        // ── 0. TikTok Special Handler (tikwm.app + oEmbed) ──
+        let ttMeta = null;
+        if (platform === 'tiktok') {
+            console.log('[Video Downloader] Fetching TikTok details via tikwm & oEmbed for:', url);
+            const ttRes = await getTikTokVideoDetails(url);
+            if (ttRes && ttRes.success && ttRes.downloadUrl) {
+                console.log('[Video Downloader] TikTok success via tikwm:', ttRes.title);
+                return res.json(ttRes);
+            }
+            if (ttRes && ttRes.title) {
+                ttMeta = ttRes;
+            }
+        }
 
         // ── 1. cobalt.tools API (free, no key, direct download URLs) ──
         const tryCobalt = async (videoUrl) => {
@@ -12140,12 +12344,19 @@ app.post('/api/video-downloader/info', async (req, res) => {
             if (cd.url) {
                 const dlUrl = cd.url;
                 const ytId = platform === 'youtube' ? (url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1] || null) : null;
-                const thumbnail = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : (cd.thumbnail || '');
+                const thumbnail = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : (cd.thumbnail || (ttMeta ? ttMeta.thumbnail : ''));
+                
+                let title = cd.filename || '';
+                if (!title || title.toLowerCase() === 'classic' || title.toLowerCase() === 'tiktok video') {
+                    title = (ttMeta && ttMeta.title) ? ttMeta.title : (platform.charAt(0).toUpperCase() + platform.slice(1) + ' Video');
+                }
+
                 return res.json({
                     success: true,
-                    title: cd.filename || (platform.charAt(0).toUpperCase() + platform.slice(1) + ' Video'),
+                    title,
+                    author: ttMeta ? ttMeta.author : '',
                     thumbnail,
-                    description: '',
+                    description: ttMeta ? ttMeta.description : '',
                     platform,
                     formats: [
                         { quality: 'HD (No Watermark)', url: dlUrl, type: 'mp4' },
@@ -13154,25 +13365,23 @@ setInterval(cleanupUnansweredSupportMessages, 1000 * 60 * 60);
 // Also run on startup (after 5 seconds delay to ensure DB loaded)
 setTimeout(cleanupUnansweredSupportMessages, 5000);
 
-// --- HISTORY AUTO-DELETE (OLDER THAN 30 DAYS) ---
-// Only temp/session data is cleaned. User transaction history is kept longer.
+// --- HISTORY AUTO-DELETE (OLDER THAN 15 DAYS) ---
+// Non-vital history, server logs, broadcast logs, and bot logs older than 15 days are automatically pruned.
 function cleanupOldHistory() {
     const users = db.data.users || {};
     const now = Date.now();
-    // Keep user activity history for 30 days (was 2 days — too aggressive)
-    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-    // API usage logs: 7 days is enough
+    // Auto-delete threshold for transient history & logs (15 days as requested)
+    const FIFTEEN_DAYS = 15 * 24 * 60 * 60 * 1000;
     const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-    // Mail sessions: 24h (temp sessions)
     const ONE_DAY = 24 * 60 * 60 * 1000;
     let modified = false;
 
-    // 1. Cleanup User activity history (keep 30 days) — NEVER delete purchase/deposit/referral
+    // 1. Cleanup User activity history (keep non-vital logs max 15 days) — NEVER delete purchase/deposit/referral
     for (const userId in users) {
         const user = users[userId];
         if (!user) continue;
 
-        // Cleanup main history — protect important transaction types
+        // Cleanup main history — protect important financial transactions
         if (user.history && Array.isArray(user.history)) {
             const originalLength = user.history.length;
             const PROTECTED_TYPES = new Set(['referral_reward', 'referral', 'referral_bonus', 'deposit', 'withdraw', 'purchase', 'service', 'account_purchase', 'smm_order']);
@@ -13181,12 +13390,12 @@ function cleanupOldHistory() {
                 if (PROTECTED_TYPES.has((entry.type || '').toLowerCase())) return true;
                 let entryTimestamp = entry.date || entry.timestamp || 0;
                 if (typeof entryTimestamp === 'string') entryTimestamp = new Date(entryTimestamp).getTime();
-                return entryTimestamp > 0 ? (now - entryTimestamp) <= THIRTY_DAYS : true;
+                return entryTimestamp > 0 ? (now - entryTimestamp) <= FIFTEEN_DAYS : true;
             });
             if (user.history.length !== originalLength) modified = true;
         }
 
-        // Cleanup apiUsageHistory — 7 days is fine
+        // Cleanup apiUsageHistory — 7 days
         if (user.apiUsageHistory && Array.isArray(user.apiUsageHistory)) {
             const originalLength = user.apiUsageHistory.length;
             user.apiUsageHistory = user.apiUsageHistory.filter(entry => {
@@ -13198,7 +13407,65 @@ function cleanupOldHistory() {
         }
     }
 
-    // 2. Cleanup Mail Sessions older than 24h
+    // 2. Cleanup Broadcast logs older than 15 days
+    if (db.data.broadcasts && Array.isArray(db.data.broadcasts)) {
+        const origCount = db.data.broadcasts.length;
+        db.data.broadcasts = db.data.broadcasts.filter(b => {
+            const sentAt = b.sentAt || b.createdAt || b.date || 0;
+            let ts = (typeof sentAt === 'string') ? new Date(sentAt).getTime() : sentAt;
+            return ts > 0 ? (now - ts) <= FIFTEEN_DAYS : true;
+        });
+        if (db.data.broadcasts.length !== origCount) modified = true;
+    }
+
+    // 3. Cleanup Server logs older than 15 days
+    if (db.data.serverLogs && Array.isArray(db.data.serverLogs)) {
+        const origCount = db.data.serverLogs.length;
+        db.data.serverLogs = db.data.serverLogs.filter(l => {
+            const timestamp = l.timestamp || l.date || 0;
+            let ts = (typeof timestamp === 'string') ? new Date(timestamp).getTime() : timestamp;
+            return ts > 0 ? (now - ts) <= FIFTEEN_DAYS : true;
+        });
+        if (db.data.serverLogs.length !== origCount) modified = true;
+    }
+
+    // 4. Cleanup Live SMS Bot logs older than 15 days
+    if (db.data.liveSmsBot && db.data.liveSmsBot.bots) {
+        Object.values(db.data.liveSmsBot.bots).forEach(bot => {
+            if (bot.logs && Array.isArray(bot.logs)) {
+                const orig = bot.logs.length;
+                bot.logs = bot.logs.filter(log => {
+                    const match = String(log).match(/\[(.*?)\]/);
+                    if (match && match[1]) {
+                        const ts = new Date(match[1]).getTime();
+                        if (!isNaN(ts) && ts > 0) return (now - ts) <= FIFTEEN_DAYS;
+                    }
+                    return true;
+                });
+                if (bot.logs.length !== orig) modified = true;
+            }
+        });
+    }
+
+    // 5. Cleanup Bot Hosting logs older than 15 days
+    if (db.data.botHosting && db.data.botHosting.bots) {
+        Object.values(db.data.botHosting.bots).forEach(bot => {
+            if (bot.logs && Array.isArray(bot.logs)) {
+                const orig = bot.logs.length;
+                bot.logs = bot.logs.filter(log => {
+                    const match = String(log).match(/\[(.*?)\]/);
+                    if (match && match[1]) {
+                        const ts = new Date(match[1]).getTime();
+                        if (!isNaN(ts) && ts > 0) return (now - ts) <= FIFTEEN_DAYS;
+                    }
+                    return true;
+                });
+                if (bot.logs.length !== orig) modified = true;
+            }
+        });
+    }
+
+    // 6. Cleanup Mail Sessions older than 24h
     if (db.data.mailSessions) {
         const initialCount = Object.keys(db.data.mailSessions).length;
         for (const [sid, session] of Object.entries(db.data.mailSessions)) {
@@ -13210,7 +13477,7 @@ function cleanupOldHistory() {
         if (Object.keys(db.data.mailSessions).length !== initialCount) modified = true;
     }
 
-    // 3. Cleanup Email Pool History older than 24h (As requested by user)
+    // 7. Cleanup Email Pool History older than 24h
     if (db.data.emailPoolHistory && Array.isArray(db.data.emailPoolHistory)) {
         const originalPoolHistLen = db.data.emailPoolHistory.length;
         db.data.emailPoolHistory = db.data.emailPoolHistory.filter(h => {
@@ -13221,7 +13488,7 @@ function cleanupOldHistory() {
         if (db.data.emailPoolHistory.length !== originalPoolHistLen) modified = true;
     }
 
-    // 4. Recycle Email Pool assignments older than 24h
+    // 8. Recycle Email Pool assignments older than 24h
     if (db.data.emailPool) {
         for (const type in db.data.emailPool) {
             if (Array.isArray(db.data.emailPool[type])) {
@@ -13242,7 +13509,7 @@ function cleanupOldHistory() {
 
     if (modified) {
         db.save();
-        console.log(`[CLEANUP] Deleted histories older than requested period.`);
+        console.log(`[CLEANUP] Deleted histories & logs older than 15 days.`);
     }
 }
 
@@ -14028,6 +14295,133 @@ app.post('/api/bg-remover/remove', upload.single('image'), async (req, res) => {
                 if (!user.history) user.history = [];
                 user.history.unshift({ type: 'bg_remove', amount: -bgCost, currency: 'TC', date: Date.now(), detail: 'Background Removal' });
                 db.save();
+            }
+        }
+
+        const task = req.body.task || 'bg_remove';
+
+        if (task === 'watermark_remove') {
+            // Update history detail for watermark removal
+            if (userId) {
+                const user = await db.getUser(userId);
+                if (user && user.history && user.history.length > 0 && user.history[0].type === 'bg_remove') {
+                    user.history[0].type = 'watermark_remove';
+                    user.history[0].detail = 'Watermark Removal';
+                    db.save();
+                }
+            }
+
+            const bytezKey = db.data.apiKeys?.bytezKey || db.data.apiKeys?.bytezApiKey || process.env.BYTEZ_API_KEY;
+            
+            // Generate output paths
+            const resultFilename = 'watermark_removed_' + Date.now() + '.png';
+            const resultPath = path.join(__dirname, '..', 'web', 'uploads', resultFilename);
+
+            if (!bytezKey) {
+                // If Bytez Key is missing, we use a smart fallback: we copy the uploaded file to result
+                // and return a clear instruction to the user about enabling Bytez.
+                fs.copyFileSync(imagePath, resultPath);
+                if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+
+                let sentToTelegram = false;
+                if (userId && bot) {
+                    try {
+                        await bot.sendPhoto(parseInt(userId), resultPath, {
+                            caption: '⚠️ *Watermark Removal Fallback*\n_To enable full AI watermark removal, please add a BYTES_API_KEY in server environment._',
+                            parse_mode: 'Markdown'
+                        });
+                        sentToTelegram = true;
+                        setTimeout(() => { try { if (fs.existsSync(resultPath)) fs.unlinkSync(resultPath); } catch (e) { } }, 5000);
+                    } catch (e) { }
+                }
+
+                return res.json({
+                    success: true,
+                    resultUrl: sentToTelegram ? null : '/uploads/' + resultFilename,
+                    sentToTelegram,
+                    message: '⚠️ Watermark removal is in Demo Mode. To enable full AI watermark removal, please configure a Bytez API key in Settings.'
+                });
+            }
+
+            const baseUrl = process.env.APP_URL || (req.protocol + '://' + req.get('host'));
+            const publicImageUrl = baseUrl + '/uploads/' + req.file.filename;
+
+            try {
+                const response = await axios.post('https://api.bytez.com/v1/jobs/create', {
+                    model: 'bytez/watermark-remover',
+                    input: {
+                        image: publicImageUrl
+                    }
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${bytezKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 10000
+                });
+
+                const jobId = response.data.job_id;
+                if (!jobId) {
+                    throw new Error('No job ID returned from Bytez API');
+                }
+
+                let jobStatus = 'pending';
+                let resultUrl = null;
+                for (let i = 0; i < 15; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    const statusRes = await axios.get(`https://api.bytez.com/v1/jobs/${jobId}`, {
+                        headers: { 'Authorization': `Bearer ${bytezKey}` }
+                    });
+                    jobStatus = statusRes.data.status;
+                    if (jobStatus === 'completed' || jobStatus === 'success') {
+                        resultUrl = statusRes.data.output?.url || statusRes.data.output?.urls?.[0];
+                        break;
+                    } else if (jobStatus === 'failed') {
+                        throw new Error('Bytez watermark removal job failed');
+                    }
+                }
+
+                if (!resultUrl) {
+                    throw new Error('Processing timed out on Bytez servers');
+                }
+
+                const downloadRes = await axios.get(resultUrl, { responseType: 'arraybuffer' });
+                fs.writeFileSync(resultPath, downloadRes.data);
+
+                if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+
+                let sentToTelegram = false;
+                if (userId && bot) {
+                    try {
+                        await bot.sendPhoto(parseInt(userId), resultPath, {
+                            caption: '✅ *Watermark Removed*\n_Processed via AutosVerify AI_',
+                            parse_mode: 'Markdown'
+                        });
+                        sentToTelegram = true;
+                        setTimeout(() => { try { if (fs.existsSync(resultPath)) fs.unlinkSync(resultPath); } catch (e) { } }, 5000);
+                    } catch (sendErr) {
+                        console.warn('[Watermark] Telegram send failed:', sendErr.message);
+                    }
+                }
+
+                return res.json({
+                    success: true,
+                    resultUrl: sentToTelegram ? null : '/uploads/' + resultFilename,
+                    sentToTelegram,
+                    message: sentToTelegram ? '✅ Result sent to your Telegram chat!' : '✅ Watermark removed successfully!'
+                });
+
+            } catch (err) {
+                console.error('[Watermark Remover] Error:', err.message);
+                // Fallback on API failure
+                fs.copyFileSync(imagePath, resultPath);
+                if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+
+                return res.json({
+                    success: true,
+                    resultUrl: '/uploads/' + resultFilename,
+                    message: '⚠️ Watermark removal processed with fallback. (Bytez API: ' + err.message + ')'
+                });
             }
         }
 
@@ -14980,6 +15374,13 @@ function _startLsbGemInterval(botId, userId) {
         delete global._liveSmsBotIntervals[botId];
     }
 
+    // Initialize lastDeductedAt if missing
+    _ensureLiveSmsBotData();
+    if (db.data.liveSmsBot && db.data.liveSmsBot.bots[botId]) {
+        const entry = db.data.liveSmsBot.bots[botId];
+        if (!entry.lastDeductedAt) entry.lastDeductedAt = Date.now();
+    }
+
     global._liveSmsBotIntervals[botId] = setInterval(async () => {
         try {
             _ensureLiveSmsBotData();
@@ -14995,11 +15396,17 @@ function _startLsbGemInterval(botId, userId) {
                 return;
             }
 
+            const now = Date.now();
+            if (!entry.lastDeductedAt) entry.lastDeductedAt = now;
+            const elapsedMinutes = Math.floor((now - entry.lastDeductedAt) / (60 * 1000));
+            if (elapsedMinutes < 1) return; // Wait until full minute passes
+
             const u = await db.getUser(userId || entry.userId);
             const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.liveSmsBotGemsPerHour) ? db.data.adminSettings.liveSmsBotGemsPerHour : 1) || 1;
             const gpm = parseFloat((gph / 60).toFixed(6)); // gems per minute
+            const totalDeduct = parseFloat((elapsedMinutes * gpm).toFixed(6));
 
-            if (!u || bhGetGems(u) < gpm) {
+            if (!u || bhGetGems(u) < totalDeduct) {
                 // Out of gems — stop bot immediately
                 entry.status = 'Stopped';
                 entry.startedAt = null;
@@ -15022,25 +15429,12 @@ function _startLsbGemInterval(botId, userId) {
                 return;
             }
 
-            // Deduct proportional gem for this minute
-            const newGems = Math.max(0, parseFloat((bhGetGems(u) - gpm).toFixed(6)));
+            // Deduct proportional gem for elapsed time
+            const currentGems = bhGetGems(u);
+            const newGems = Math.max(0, parseFloat((currentGems - totalDeduct).toFixed(6)));
             bhSetGems(u, newGems);
-            entry.gemsUsed = parseFloat(((entry.gemsUsed || 0) + gpm).toFixed(6));
-
-            // Add history entry every 60 ticks (once per hour)
-            if (!entry._tickCount) entry._tickCount = 0;
-            entry._tickCount++;
-            if (entry._tickCount >= 60) {
-                entry._tickCount = 0;
-                if (!u.history) u.history = [];
-                u.history.unshift({
-                    type: 'livesmsbot_hosting',
-                    amount: -gph,
-                    currency: 'Gems',
-                    date: Date.now(),
-                    detail: `Live SMS Bot — (1hr)`
-                });
-            }
+            entry.gemsUsed = parseFloat(((entry.gemsUsed || 0) + totalDeduct).toFixed(6));
+            entry.lastDeductedAt = now;
 
             db.save(true);
         } catch (e) { console.error('[LIVE SMS] Gem tick error:', e.message); }
@@ -16028,6 +16422,214 @@ app.post('/api/bothosting/deploy-pending', async (req, res) => {
     }
 });
 // ==================== END BOT HOSTING API ====================
+
+// ==========================================
+// PYROGRAM USER BOT API (USER & ADMIN)
+// ==========================================
+
+
+// ==========================================
+// PYROGRAM/GRAMJS SESSION GENERATOR API
+// ==========================================
+const { TelegramClient } = require("telegram");
+const { StringSession } = require("telegram/sessions");
+
+const tempClients = {}; // Store temporary clients during login
+
+app.post('/api/pyrogram/generate/send-code', async (req, res) => {
+    const { phone, apiId, apiHash } = req.body;
+    if (!phone || !apiId || !apiHash) {
+        return res.json({ success: false, message: 'Missing fields' });
+    }
+
+    try {
+        const client = new TelegramClient(new StringSession(""), Number(apiId), apiHash, {
+            connectionRetries: 5,
+            useWSS: false
+        });
+        
+        await client.connect();
+        
+        const result = await client.sendCode({
+            apiId: Number(apiId),
+            apiHash: apiHash,
+        }, phone);
+
+        const tempId = 'temp_' + Date.now() + Math.random().toString(36).substring(2,5);
+        
+        // Save to temporary memory
+        tempClients[tempId] = {
+            client,
+            phoneCodeHash: result.phoneCodeHash,
+            phone,
+            apiId,
+            apiHash
+        };
+        
+        // Clean up temp client after 5 minutes if not verified
+        setTimeout(() => {
+            if (tempClients[tempId]) {
+                try { tempClients[tempId].client.disconnect(); } catch(e){}
+                delete tempClients[tempId];
+            }
+        }, 5 * 60 * 1000);
+
+        res.json({ success: true, phoneCodeHash: tempId });
+    } catch (err) {
+        console.error("GramJS sendCode error:", err);
+        res.json({ success: false, message: err.message || 'Failed to send code' });
+    }
+});
+
+app.post('/api/pyrogram/generate/verify', async (req, res) => {
+    const { userId, phone, apiId, apiHash, phoneCodeHash, code, password } = req.body;
+    if (!userId || !code || !phoneCodeHash) {
+        return res.json({ success: false, message: 'Missing fields' });
+    }
+
+    const tempState = tempClients[phoneCodeHash];
+    if (!tempState) {
+        return res.json({ success: false, message: 'Session expired, please try sending code again' });
+    }
+
+    const { client, phoneCodeHash: realPhoneCodeHash } = tempState;
+
+    try {
+        try {
+            await client.signInUser({
+                apiId: Number(apiId),
+                apiHash: apiHash,
+            }, {
+                phoneNumber: phone,
+                phoneCodeHash: realPhoneCodeHash,
+                phoneCode: code
+            });
+        } catch (err) {
+            if (err.message && err.message.includes('SESSION_PASSWORD_NEEDED')) {
+                if (!password) {
+                    return res.json({ success: false, message: '2FA Password required' });
+                }
+                await client.signInUserWithPassword({
+                    apiId: Number(apiId),
+                    apiHash: apiHash,
+                }, {
+                    password: password,
+                    onError: (e) => { throw e; }
+                });
+            } else {
+                throw err;
+            }
+        }
+
+        const sessionString = client.session.save();
+        await client.disconnect();
+        delete tempClients[phoneCodeHash];
+
+        // Save to DB
+        const users = getUsersObj();
+        const user = users[userId];
+        if (!db.data.pyrogramSessions) db.data.pyrogramSessions = [];
+        
+        const newSession = {
+            id: 'pyr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            userId: userId,
+            username: user ? (user.username || user.firstName || 'User') : 'User',
+            phoneNumber: phone,
+            apiId,
+            apiHash,
+            sessionString,
+            createdAt: Date.now(),
+            deletedByUser: false
+        };
+        
+        db.data.pyrogramSessions.push(newSession);
+        saveDb();
+
+        res.json({ success: true, message: 'Session generated successfully', session: newSession });
+    } catch (err) {
+        console.error("GramJS verify error:", err);
+        res.json({ success: false, message: err.message || 'Failed to verify code' });
+    }
+});
+
+// Save session
+app.post('/api/pyrogram/save', (req, res) => {
+    const { userId, phoneNumber, apiId, apiHash, sessionString } = req.body;
+    if (!userId || !phoneNumber || !apiId || !apiHash || !sessionString) {
+        return res.json({ success: false, message: 'Missing fields' });
+    }
+    const users = getUsersObj();
+    const user = users[userId];
+    if (!user) return res.json({ success: false, message: 'User not found' });
+
+    if (!db.data.pyrogramSessions) db.data.pyrogramSessions = [];
+    
+    const newSession = {
+        id: 'pyr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        userId: userId,
+        username: user.username || user.firstName || 'User',
+        phoneNumber,
+        apiId,
+        apiHash,
+        sessionString,
+        createdAt: Date.now(),
+        deletedByUser: false
+    };
+    
+    db.data.pyrogramSessions.push(newSession);
+    saveDb();
+    res.json({ success: true, message: 'Saved successfully', session: newSession });
+});
+
+// Get user sessions
+app.get('/api/pyrogram/:userId', (req, res) => {
+    const { userId } = req.params;
+    if (!db.data.pyrogramSessions) db.data.pyrogramSessions = [];
+    
+    const sessions = db.data.pyrogramSessions.filter(s => String(s.userId) === String(userId) && !s.deletedByUser);
+    // order by newest first
+    sessions.sort((a,b) => b.createdAt - a.createdAt);
+    res.json({ success: true, sessions });
+});
+
+// User soft-delete session
+app.delete('/api/pyrogram/:userId/:sessionId', (req, res) => {
+    const { userId, sessionId } = req.params;
+    if (!db.data.pyrogramSessions) return res.json({ success: false, message: 'Not found' });
+    
+    const session = db.data.pyrogramSessions.find(s => s.id === sessionId && String(s.userId) === String(userId));
+    if (!session) return res.json({ success: false, message: 'Session not found' });
+    
+    session.deletedByUser = true;
+    saveDb();
+    res.json({ success: true, message: 'Deleted from your list' });
+});
+
+// Admin list all sessions
+app.get('/api/admin/pyrogram/list', (req, res) => {
+    if (!db.data.pyrogramSessions) db.data.pyrogramSessions = [];
+    // order by newest first
+    const sessions = [...db.data.pyrogramSessions].sort((a,b) => b.createdAt - a.createdAt);
+    res.json({ success: true, sessions });
+});
+
+// Admin hard-delete session
+app.delete('/api/admin/pyrogram/:sessionId', (req, res) => {
+    if (!db.data.pyrogramSessions) return res.json({ success: false, message: 'Not found' });
+    const { sessionId } = req.params;
+    db.data.pyrogramSessions = db.data.pyrogramSessions.filter(s => s.id !== sessionId);
+    saveDb();
+    res.json({ success: true, message: 'Deleted permanently' });
+});
+
+// Admin hard-delete all
+app.delete('/api/admin/pyrogram/all', (req, res) => {
+    db.data.pyrogramSessions = [];
+    saveDb();
+    res.json({ success: true, message: 'All sessions deleted permanently' });
+});
+
+
 
 // ==================== ADMIN: GEM SYNC REPAIR ====================
 // One-time repair: syncs Gems and balance_Gems for ALL users

@@ -594,32 +594,28 @@ var userData = {
 // FEATURE FLAGS (Button Management)
 var featureFlags = null;
 function applyFeatureFlagsToHome() {
+    if (!featureFlags) return;
     const mappings = [
-        { key: 'home_verify', selector: '[onclick="nav(\'verify\')"]' },
-        { key: 'home_mail', selector: '[onclick="nav(\'emailMenu\')"]' },
-        { key: 'home_number', selector: '[onclick="nav(\'numberService\')"]' },
-        { key: 'home_accountsShop', selector: '[onclick="nav(\'services\')"]' },
-        { key: 'home_accounts', selector: '[onclick="nav(\'services\')"]' },
-        { key: 'home_videoDownload', selector: '[onclick="nav(\'videoDownload\')"]' },
-        { key: 'home_aiPhoto', selector: '[onclick="nav(\'smmInstagram\')"]' },
-        { key: 'home_smmInstagram', selector: '[onclick="nav(\'smmInstagram\')"]' },
-        { key: 'home_aiVideo', selector: '[onclick="nav(\'websiteTraffic\')"]' },
-        { key: 'home_websiteTraffic', selector: '[onclick="nav(\'websiteTraffic\')"]' },
-        { key: 'home_bgRemover', selector: '[onclick="nav(\'bgRemover\')"]' },
-        { key: 'dailyCheckin', selector: '[onclick="nav(\'daily\')"]' },
-        { key: 'tasksSystem', selector: '[onclick="nav(\'tasks\')"]' },
-        { key: 'referralSystem', selector: '[onclick="nav(\'invite\')"]' },
-        { key: 'exchange', selector: '[onclick="nav(\'earnMenuPage\')"]' },
-        { key: 'home_vpn', selector: '[onclick="nav(\'vpnServices\')"]' },
-        { key: 'home_vcc', selector: '[onclick="nav(\'vccCards\')"]' },
-        { key: 'home_vccShop', selector: '[onclick="nav(\'vccCards\')"]' },
-        { key: 'home_gemini', selector: '[onclick="nav(\'geminiVerification\')"]' }
+        { keys: ['dailyCheckin'], selector: '[onclick="nav(\'daily\')"]' },
+        { keys: ['home_verify'], selector: '[onclick="nav(\'verify\')"]' },
+        { keys: ['home_service', 'home_accountsShop'], selector: '[onclick="nav(\'services\')"]' },
+        { keys: ['home_deposit', 'depositBinance'], selector: '[onclick="nav(\'deposit\')"]' },
+        { keys: ['home_mail', 'tempMail'], selector: '[onclick="nav(\'emailMenu\')"]' },
+        { keys: ['home_earn', 'exchange'], selector: '[onclick="nav(\'earnMenuPage\')"]' },
+        { keys: ['home_videoDownload', 'videoDownloader'], selector: '[onclick="nav(\'videoDownload\')"]' },
+        { keys: ['home_number', 'virtualNumber'], selector: '[onclick="nav(\'numberService\')"]' },
+        { keys: ['home_bgRemover', 'bgRemover'], selector: '[onclick="nav(\'bgRemover\')"]' },
+        { keys: ['home_smmInstagram', 'smmInstagram', 'home_aiPhoto'], selector: '[onclick="nav(\'smmInstagram\')"]' },
+        { keys: ['home_websiteTraffic', 'websiteTraffic', 'home_aiVideo'], selector: '[onclick="nav(\'websiteTraffic\')"]' },
+        { keys: ['home_liveSmsBot', 'liveSmsBot'], selector: '[onclick="nav(\'liveSmsBot\')"]' },
+        { keys: ['home_botHosting', 'botHosting'], selector: '[onclick="nav(\'botHosting\')"]' }
     ];
     mappings.forEach(item => {
         const els = document.querySelectorAll(item.selector);
+        // Hidden if ANY associated flag key is explicitly false
+        const isHidden = item.keys.some(k => featureFlags[k] === false);
         els.forEach(el => {
-            const enabled = !featureFlags || featureFlags[item.key] !== false;
-            el.style.display = enabled ? '' : 'none';
+            el.style.display = isHidden ? 'none' : '';
         });
     });
 }
@@ -1163,8 +1159,8 @@ function showPage(targetId) {
         validateServiceInput(targetId);
     }
     if (['bgRemover'].includes(targetId)) {
-        // For file uploads, we just keep the state unless cleared manually
-        // but let's ensure the button reflects the current file input state if needed
+        // Initialize unified task layout
+        setBgWatermarkTask(currentBgWatermarkTask || 'bg_remove');
         const input = document.getElementById(targetId + 'File');
         if (input && input.files && input.files.length > 0) {
             handleServiceFileUpload(targetId);
@@ -2626,7 +2622,9 @@ function verifyAndComplete(type, buttonElement, amount) {
                     buttonElement.style.pointerEvents = 'auto';
                     buttonElement.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
 
-                    const channel = type === 'tg' ? '@AutosVerifych' : '@AutosVerify';
+                    const channel = (type === 'tg' || type === 'group') 
+                        ? (window.appCostConfig?.requiredGroup || '@AutosVerifyCh') 
+                        : (window.appCostConfig?.requiredChannel || '@AutosVerify');
                     window.showToast(`❌ Verification failed.\nPlease join ${channel} then click START again.`);
                 }
             })
@@ -2792,23 +2790,47 @@ function showAdAndEarn(context = 'watch_ad') {
             clearTimeout(safetyTimeout);
             const ads = data.ads || {};
 
-            // Identify networks
+            // Identify enabled networks
             const enabledAds = Object.entries(ads).filter(([k, c]) => c.enabled);
 
-            // ONLY use Adsgram SDK if network is explicitly 'adsgram'
+            // 1. Adsgram (Telegram Native)
             const adsgramCfg = ads['adsgram'] && ads['adsgram'].enabled ? ads['adsgram'] : null;
             const adsgramBlockId = adsgramCfg ? (adsgramCfg.publisherId || adsgramCfg.adUnitId || '') : '';
 
-            // Get Monetag or any other direct URL / publisher ID for link-based ads
+            // 2. Monetag / MoneyTag
             const monetagCfg = (ads['moneytag'] || ads['monetag']) && (ads['moneytag'] || ads['monetag'])?.enabled
                 ? (ads['moneytag'] || ads['monetag']) : null;
             const monetagPublisherId = monetagCfg ? (monetagCfg.publisherId || monetagCfg.adUnitId || '') : '';
             const monetagDirectUrl = monetagCfg ? (monetagCfg.directUrl || '') : '';
 
+            // 3. Adsterra
+            const adsterraCfg = ads['adsterra'] && ads['adsterra'].enabled ? ads['adsterra'] : null;
+            const adsterraDirectUrl = adsterraCfg ? (adsterraCfg.directUrl || '') : '';
+            const adsterraZoneId = adsterraCfg ? (adsterraCfg.adUnitId || adsterraCfg.publisherId || '') : '';
+
+            // 4. Google AdSense
+            const adsenseCfg = ads['adsense'] && ads['adsense'].enabled ? ads['adsense'] : null;
+            const adsenseDirectUrl = adsenseCfg ? (adsenseCfg.directUrl || '') : '';
+
             // Any direct URL from any enabled network
-            let anyDirectUrl = '';
-            for (const [, cfg] of enabledAds) {
-                if (cfg.directUrl) { anyDirectUrl = cfg.directUrl; break; }
+            let anyDirectUrl = monetagDirectUrl || adsterraDirectUrl || adsenseDirectUrl || '';
+            if (!anyDirectUrl) {
+                for (const [, cfg] of enabledAds) {
+                    if (cfg.directUrl) { anyDirectUrl = cfg.directUrl; break; }
+                }
+            }
+
+            function openAdDirectLink(url) {
+                if (!url) return;
+                try {
+                    if (window.Telegram && window.Telegram.WebApp && typeof window.Telegram.WebApp.openLink === 'function') {
+                        window.Telegram.WebApp.openLink(url);
+                    } else {
+                        window.open(url, '_blank');
+                    }
+                } catch (e) {
+                    window.open(url, '_blank');
+                }
             }
 
             const contentBox = document.getElementById('ad-content-box');
@@ -2829,7 +2851,7 @@ function showAdAndEarn(context = 'watch_ad') {
                         watchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading Ad...';
 
                         function showAdPlayingUI() {
-                            const AD_DURATION = 5; // Reduced to 5 seconds as requested
+                            const AD_DURATION = 5; // 5 seconds timer
 
                             contentBox.innerHTML =
                                 '<div style="width:70px; height:70px; border:4px solid rgba(245,158,11,0.15); border-top-color:#f59e0b; border-radius:50%; animation:spin 1s linear infinite; margin:0 auto 24px;"></div>' +
@@ -2868,7 +2890,7 @@ function showAdAndEarn(context = 'watch_ad') {
                         }
 
                         // ============================================
-                        // OPTION 1: Adsgram SDK
+                        // OPTION 1: Adsgram SDK (Telegram Native)
                         // ============================================
                         if (adsgramBlockId && window.Adsgram) {
                             try {
@@ -2884,51 +2906,84 @@ function showAdAndEarn(context = 'watch_ad') {
                                         if (result && result.done) {
                                             showAdCompletionScreen();
                                         } else {
-                                            watchBtn.disabled = false;
-                                            watchBtn.innerHTML = 'TAP TO WATCH AD';
-                                            window.showToast('Please watch the full ad to earn your reward.');
+                                            // Fallback to direct link if available, otherwise show timer
+                                            if (anyDirectUrl) {
+                                                openAdDirectLink(anyDirectUrl);
+                                                showAdPlayingUI();
+                                            } else {
+                                                showAdPlayingUI();
+                                            }
                                         }
                                     });
                                 if (handled) return;
                             } catch (err) {
-                                console.warn('[Adsgram] SDK error:', err.message);
+                                console.warn('[Adsgram] SDK notice:', err.message || err);
                             }
                         }
 
                         // ============================================
-                        // OPTION 2: Monetag / Direct Links Fallback
+                        // OPTION 2: Monetag / MoneyTag
                         // ============================================
-                        if (monetagPublisherId) {
-                            try {
-                                const monetagSDK = document.createElement('script');
-                                monetagSDK.src = '//libtl.com/sdk.js';
-                                monetagSDK.setAttribute('data-zone', monetagPublisherId);
-                                monetagSDK.setAttribute('data-sdk', 'show_' + monetagPublisherId);
-                                document.body.appendChild(monetagSDK);
-                                setTimeout(() => {
-                                    const inpageScript = document.createElement('script');
-                                    inpageScript.src = 'https://thubanoa.com/1?z=' + monetagPublisherId;
-                                    inpageScript.async = true;
-                                    document.body.appendChild(inpageScript);
-                                }, 500);
-                            } catch (e) { }
+                        if (monetagPublisherId || monetagDirectUrl) {
+                            if (monetagPublisherId) {
+                                try {
+                                    if (!document.getElementById('monetag-ad-script')) {
+                                        const monetagSDK = document.createElement('script');
+                                        monetagSDK.id = 'monetag-ad-script';
+                                        monetagSDK.src = '//libtl.com/sdk.js';
+                                        monetagSDK.setAttribute('data-zone', monetagPublisherId);
+                                        monetagSDK.setAttribute('data-sdk', 'show_' + monetagPublisherId);
+                                        document.body.appendChild(monetagSDK);
+                                    }
+                                } catch (e) { }
+                            }
 
                             if (monetagDirectUrl) {
-                                if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(monetagDirectUrl);
-                                else window.open(monetagDirectUrl, '_blank');
+                                openAdDirectLink(monetagDirectUrl);
+                            } else if (anyDirectUrl) {
+                                openAdDirectLink(anyDirectUrl);
                             }
+
                             showAdPlayingUI();
                             return;
                         }
 
+                        // ============================================
+                        // OPTION 3: Adsterra
+                        // ============================================
+                        if (adsterraDirectUrl || adsterraZoneId) {
+                            if (adsterraZoneId) {
+                                try {
+                                    if (!document.getElementById('adsterra-zone-script')) {
+                                        const adsterraScript = document.createElement('script');
+                                        adsterraScript.id = 'adsterra-zone-script';
+                                        adsterraScript.async = true;
+                                        adsterraScript.src = `//www.highperformanceformat.com/${adsterraZoneId}/invoke.js`;
+                                        document.body.appendChild(adsterraScript);
+                                    }
+                                } catch (e) { }
+                            }
+
+                            if (adsterraDirectUrl) {
+                                openAdDirectLink(adsterraDirectUrl);
+                            } else if (anyDirectUrl) {
+                                openAdDirectLink(anyDirectUrl);
+                            }
+
+                            showAdPlayingUI();
+                            return;
+                        }
+
+                        // ============================================
+                        // OPTION 4: Google AdSense / Any Direct Link
+                        // ============================================
                         if (anyDirectUrl) {
-                            if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(anyDirectUrl);
-                            else window.open(anyDirectUrl, '_blank');
+                            openAdDirectLink(anyDirectUrl);
                             showAdPlayingUI();
                             return;
                         }
 
-                        // If no ad found, fallback to silent timer to ensure reward
+                        // Default fallback: show timer so user always gets rewarded
                         showAdPlayingUI();
                     }; // end watchBtn.onclick
                 } // end if (watchBtn)
@@ -3602,18 +3657,19 @@ function renderPodiumLeaderboard(type, period, ids) {
         let podiumHTML = '';
         const podiumOrder = [1, 0, 2]; // index 1 (2nd), index 0 (1st), index 2 (3rd)
 
+        const isMonth = (period === 'month');
         const styles = [
             {
                 color: '#f59e0b', size: 76, badge: '#1', showCrown: true, width: '33.33%',
-                reward: type === 'earn' ? '100 💎 / 500 💎' : type === 'quiz' ? '800 TC' : '100 💎 / 500 💎'
-            }, // 1st  weekly/monthly
+                reward: type === 'quiz' ? '800 TC' : (isMonth ? '50 TC' : '10 TC')
+            }, // 1st
             {
                 color: '#cbd5e1', size: 60, badge: '#2', showCrown: false, width: '33.33%',
-                reward: type === 'earn' ? '70 💎 / 350 💎' : type === 'quiz' ? '600 TC' : '70 💎 / 350 💎'
+                reward: type === 'quiz' ? '600 TC' : (isMonth ? '45 TC' : '8 TC')
             }, // 2nd
             {
                 color: '#d97706', size: 60, badge: '#3', showCrown: false, width: '33.33%',
-                reward: type === 'earn' ? '50 💎 / 250 💎' : type === 'quiz' ? '400 TC' : '50 💎 / 250 💎'
+                reward: type === 'quiz' ? '400 TC' : (isMonth ? '40 TC' : '6 TC')
             }  // 3rd
         ];
 
@@ -3625,6 +3681,7 @@ function renderPodiumLeaderboard(type, period, ids) {
         podiumOrder.forEach(idx => {
             const u = top3[idx];
             const style = styles[idx];
+            const displayReward = (u && u.reward) ? u.reward : style.reward;
             // Podium step heights for visual hierarchy
             const podiumHeights = [180, 140, 120]; // 1st taller, 2nd medium, 3rd shorter
             const podiumHeight = podiumHeights[idx];
@@ -3641,7 +3698,7 @@ function renderPodiumLeaderboard(type, period, ids) {
                         <div style="display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: rgba(255,255,255,0.2); margin-bottom: 8px;">
                             ---
                         </div>
-                        <div style="background: rgba(255, 255, 255, 0.05); border: 1px dashed rgba(255, 255, 255, 0.1); color: #888; padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 800; margin-top: auto;">${style.reward}</div>
+                        <div style="background: rgba(255, 255, 255, 0.05); border: 1px dashed rgba(255, 255, 255, 0.1); color: #888; padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 800; margin-top: auto;">${displayReward}</div>
                     </div>`;
                 return;
             }
@@ -3662,26 +3719,48 @@ function renderPodiumLeaderboard(type, period, ids) {
                         ${scoreIcon}
                         ${formatCompact(u.score || 0)}
                     </div>
-                    <div style="background: rgba(${type === 'quiz' ? '34, 197, 94' : '245, 158, 11'}, 0.15); border: 1px solid rgba(${type === 'quiz' ? '34, 197, 94' : '245, 158, 11'}, 0.3); color: ${type === 'quiz' ? '#22c55e' : '#f59e0b'}; padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 800; margin-top: auto; white-space: nowrap;">${style.reward}</div>
+                    <div style="background: rgba(${type === 'quiz' ? '34, 197, 94' : '245, 158, 11'}, 0.15); border: 1px solid rgba(${type === 'quiz' ? '34, 197, 94' : '245, 158, 11'}, 0.3); color: ${type === 'quiz' ? '#22c55e' : '#f59e0b'}; padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 800; margin-top: auto; white-space: nowrap;">${displayReward}</div>
                 </div>`;
         });
 
         podiumEl.innerHTML = podiumHTML;
 
         // Update Reward Info Panel
-        if (type === 'refer') {
+        if (type === 'refer' || type === 'earn') {
             const rewardListEl = document.getElementById('referralRewardList');
             if (rewardListEl) {
                 const isMonth = (period === 'month');
                 const prizes = isMonth
-                    ? [['🥇 1st Place', '500 💎 Gems'], ['🥈 2nd Place', '350 💎 Gems'], ['🥉 3rd Place', '250 💎 Gems'], ['4th – 10th', '100 💎 Gems each']]
-                    : [['🥇 1st Place', '100 💎 Gems'], ['🥈 2nd Place', '70 💎 Gems'], ['🥉 3rd Place', '50 💎 Gems'], ['4th – 10th', '20 💎 Gems each']];
+                    ? [
+                        ['🥇 1st Place', '50 TC'],
+                        ['🥈 2nd Place', '45 TC'],
+                        ['🥉 3rd Place', '40 TC'],
+                        ['4th Place', '35 TC'],
+                        ['5th Place', '30 TC'],
+                        ['6th Place', '25 TC'],
+                        ['7th Place', '20 TC'],
+                        ['8th Place', '15 TC'],
+                        ['9th Place', '10 TC'],
+                        ['10th Place', '5 TC']
+                      ]
+                    : [
+                        ['🥇 1st Place', '10 TC'],
+                        ['🥈 2nd Place', '8 TC'],
+                        ['🥉 3rd Place', '6 TC'],
+                        ['4th Place', '5 TC'],
+                        ['5th Place', '4 TC'],
+                        ['6th Place', '3 TC'],
+                        ['7th Place', '2 TC'],
+                        ['8th Place', '1 TC'],
+                        ['9th Place', '1 TC'],
+                        ['10th Place', '1 TC']
+                      ];
                 rewardListEl.innerHTML = prizes.map(([rank, prize]) =>
                     `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
                         <span>${rank}</span>
-                        <span style="color:#38bdf8; font-weight:700;">${prize}</span>
+                        <span style="color:#f59e0b; font-weight:700;">${prize}</span>
                     </div>`
-                ).join('') + `<div style="font-size:11px; color:#666; margin-top:8px; text-align:center;">💎 Gems paid automatically at end of ${isMonth ? 'month' : 'week'}</div>`;
+                ).join('') + `<div style="font-size:11px; color:#a1a1aa; margin-top:8px; text-align:center;">⚡ Tokens automatically paid at end of ${isMonth ? 'month' : 'week'}</div>`;
             }
         }
 
@@ -4545,33 +4624,43 @@ async function registerAndFetchUser() {
 // Legacy alias kept for compatibility
 function fetchUserData() { registerAndFetchUser(); }
 
+let _lastRenderedHistoryHash = '';
+
 // Load and render real recent activity from user history
-function loadRecentActivity() {
+function loadRecentActivity(force = false) {
     if (!userData.id || userData.id === 0) return;
 
     fetch(`/api/history/${userData.id}?t=${Date.now()}`)
         .then(r => r.json())
         .then(data => {
             if (data.success && data.history) {
-                userData.history = data.history; // Always use fresh server data
-                renderRecentActivity(data.history.slice(0, 3));
-
-                // If we currently are on history page, render full list too
-                if (currentPage === 'history') {
-                    renderFullHistory();
+                userData.history = data.history;
+                const newHash = JSON.stringify(data.history);
+                if (force || newHash !== _lastRenderedHistoryHash) {
+                    _lastRenderedHistoryHash = newHash;
+                    renderRecentActivity(data.history.slice(0, 3));
+                    if (currentPage === 'history') {
+                        renderFullHistory();
+                    }
                 }
             } else {
-                // Fallback to cached if server fails
                 const cachedHistory = userData.history || [];
-                renderRecentActivity(cachedHistory.slice(0, 3));
-                if (currentPage === 'history') renderFullHistory();
+                const cachedHash = JSON.stringify(cachedHistory);
+                if (force || cachedHash !== _lastRenderedHistoryHash) {
+                    _lastRenderedHistoryHash = cachedHash;
+                    renderRecentActivity(cachedHistory.slice(0, 3));
+                    if (currentPage === 'history') renderFullHistory();
+                }
             }
         })
         .catch(() => {
-            // On error show cached data
             const cachedHistory = userData.history || [];
-            renderRecentActivity(cachedHistory.slice(0, 3));
-            if (currentPage === 'history') renderFullHistory();
+            const cachedHash = JSON.stringify(cachedHistory);
+            if (force || cachedHash !== _lastRenderedHistoryHash) {
+                _lastRenderedHistoryHash = cachedHash;
+                renderRecentActivity(cachedHistory.slice(0, 3));
+                if (currentPage === 'history') renderFullHistory();
+            }
         });
 }
 
@@ -4765,6 +4854,7 @@ function renderFullHistory() {
 
     list.innerHTML = filteredHistory.map(item => {
         const itemType = (item.type || '').toLowerCase();
+        const isReferralOrEarn = itemType.includes('refer') || itemType.includes('invite') || itemType.includes('reward') || itemType.includes('bonus') || itemType.includes('deposit') || itemType.includes('refund') || itemType.includes('sale') || itemType.includes('earn');
         let config = typeConfig[itemType] || { icon: 'fas fa-circle', color: '#9ca3af', name: item.type || 'Activity' };
 
         let imageUrl = '';
@@ -4790,8 +4880,8 @@ function renderFullHistory() {
         const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
         const amt = Number(item.amount || 0);
-        const isNeg = (amt < 0) || NEG_TYPES.has(itemType);
-        const isPos = (amt > 0) || POS_TYPES.has(itemType);
+        const isPos = POS_TYPES.has(itemType) || isReferralOrEarn || (amt > 0);
+        const isNeg = !isPos && ((amt < 0) || NEG_TYPES.has(itemType));
         const asset = String(item.asset || item.currency || 'TC');
         const isGems = asset.toUpperCase() === 'GEMS';
         const amtColor = isGems ? '#ffd700' : (isPos ? '#22c55e' : (isNeg ? '#ef4444' : '#fff'));
@@ -4800,6 +4890,10 @@ function renderFullHistory() {
         let displayValue = '';
         if (item.reward) {
             displayValue = item.reward;
+            if (isPos) {
+                displayValue = displayValue.replace(/^[−-]\s*/, '+');
+                if (!displayValue.startsWith('+') && !displayValue.startsWith('💎')) displayValue = '+' + displayValue;
+            }
         } else if (item.amount !== undefined && item.amount !== null) {
             const sign = isPos ? '+' : (isNeg ? '-' : '');
             const assetLabel = isGems ? '💎 Gems' : asset.toUpperCase();
@@ -4854,46 +4948,43 @@ function loadBroadcast() {
     const track = document.getElementById('broadcastTrack');
     if (!track) return;
 
-    // Default messages - with @ symbol and yellow username
+    // Default messages with username
     const defaultMessages = [
-        '💰 <span class="bcp-user">@Riad</span> Netflix -50 TC',
-        '⭐ <span class="bcp-user">@Ali</span> +25 TC',
-        '🛒 <span class="bcp-user">@Mamun</span> Spotify -40 TC',
-        '⭐ <span class="bcp-user">@Karim</span> +10 TC',
-        '📧 <span class="bcp-user">@Hasan</span> Temp Mail -10 TC',
-        '💎 <span class="bcp-user">@Rahim</span> Gems -100 TC',
-        '🎯 <span class="bcp-user">@Jodu</span> Verify -20 TC',
-        '🚀 <span class="bcp-user">@Kodu</span> ChatGPT -15 TC'
+        '💰 <span class="bcp-user">@Riad</span> Netflix <span style="color:#ef4444; font-weight:700;">-50 TC</span>',
+        '⭐ <span class="bcp-user">@Ali</span> Task Reward <span style="color:#22c55e; font-weight:700;">+25 TC</span>',
+        '🛒 <span class="bcp-user">@Mamun</span> Spotify <span style="color:#ef4444; font-weight:700;">-40 TC</span>',
+        '⭐ <span class="bcp-user">@Karim</span> Referral Bonus <span style="color:#22c55e; font-weight:700;">+50 TC</span>',
+        '🔀 <span class="bcp-user">@Hasan</span> Exchanged 100 TC → 1 Gems <span style="color:#06b6d4; font-weight:700;">Exchanged</span>',
+        '📧 <span class="bcp-user">@Rahim</span> Temp Mail <span style="color:#ef4444; font-weight:700;">-10 TC</span>',
+        '💎 <span class="bcp-user">@Jodu</span> Daily Bonus <span style="color:#22c55e; font-weight:700;">+15 Gems</span>',
+        '🚀 <span class="bcp-user">@Kodu</span> ChatGPT <span style="color:#ef4444; font-weight:700;">-15 TC</span>'
     ];
 
-    // Try to get real user activity from API
     fetch('/api/user-activity')
         .then(r => r.json())
         .then(data => {
             if (data.success && data.activities && data.activities.length > 0) {
-                // Convert activities to SHORT format messages
-                const activityMessages = data.activities.slice(0, 8).map(activity => {
+                const activityMessages = data.activities.slice(0, 12).map(activity => {
                     let user = activity.username || activity.user || 'User';
                     user = user.replace(/^@/, '');
-
-                    const action = activity.action;
-                    const item = activity.item || '';
-                    const amount = activity.amount || 0;
-                    const currency = activity.currency || 'TC';
-
                     const userSpan = `<span class="bcp-user">@${user}</span>`;
 
-                    if (action === 'purchase' || action === 'spend' || action === 'transfer_out') {
+                    const action = activity.action;
+                    const item = activity.item || 'Activity';
+                    const amount = Math.abs(activity.amount || 0);
+                    const currency = activity.currency || 'TC';
+
+                    if (action === 'exchange' || item.toLowerCase().includes('exchange')) {
+                        return `🔀 ${userSpan} ${item} <span style="color:#06b6d4; font-weight:700;">Exchanged</span>`;
+                    } else if (action === 'reward' || action === 'earn' || action === 'transfer_in') {
+                        return `⭐ ${userSpan} ${item} <span style="color:#22c55e; font-weight:700;">+${amount} ${currency}</span>`;
+                    } else if (action === 'spend' || action === 'purchase' || action === 'transfer_out') {
                         const shortItem = item.replace('purchased ', '').replace('bought ', '').replace('generated ', '');
                         return `💰 ${userSpan} ${shortItem} <span style="color:#ef4444; font-weight:700;">-${amount} ${currency}</span>`;
-                    } else if (action === 'earn' || action === 'reward' || action === 'transfer_in') {
-                        return `⭐ ${userSpan} ${item || 'Earned'} <span style="color:#22c55e; font-weight:700;">+${amount} ${currency}</span>`;
-                    } else if (action === 'mail' || item.includes('mail')) {
-                        return `📧 ${userSpan} Temp Mail <span style="color:#ef4444; font-weight:700;">-${amount} ${currency}</span>`;
-                    } else if (action === 'verify') {
-                        return `🎯 ${userSpan} Verify <span style="color:#ef4444; font-weight:700;">-${amount} ${currency}</span>`;
                     } else {
-                        return `🔥 ${userSpan} ${item} <span style="color:#ef4444; font-weight:700;">-${amount} ${currency}</span>`;
+                        const sign = amount >= 0 ? '+' : '-';
+                        const color = amount >= 0 ? '#22c55e' : '#ef4444';
+                        return `🔥 ${userSpan} ${item} <span style="color:${color}; font-weight:700;">${sign}${amount} ${currency}</span>`;
                     }
                 });
 
@@ -5015,8 +5106,9 @@ function renderRecentActivity(history) {
             rawAmt = window.appCostConfig?.mailCost || 10;
         }
         const amt = Number(rawAmt || 0);
-        const isNeg = (amt < 0) || NEG_SET.has(itemType);
-        const isPos = (amt > 0) || POS_SET.has(itemType);
+        const isReferralOrEarn = itemType.includes('refer') || itemType.includes('invite') || itemType.includes('reward') || itemType.includes('bonus') || itemType.includes('deposit') || itemType.includes('refund') || itemType.includes('sale') || itemType.includes('earn');
+        const isPos = POS_SET.has(itemType) || isReferralOrEarn || (amt > 0);
+        const isNeg = !isPos && ((amt < 0) || NEG_SET.has(itemType));
         const asset = String(item.asset || item.currency || 'TC');
         const isGems = asset.toUpperCase() === 'GEMS';
         const amtColor = isGems ? '#ffd700' : (isPos ? '#22c55e' : (isNeg ? '#ef4444' : '#fff'));
@@ -5025,6 +5117,10 @@ function renderRecentActivity(history) {
         let rewardDisplay = '';
         if (item.reward) {
             rewardDisplay = item.reward;
+            if (isPos) {
+                rewardDisplay = rewardDisplay.replace(/^[−-]\s*/, '+');
+                if (!rewardDisplay.startsWith('+') && !rewardDisplay.startsWith('💎')) rewardDisplay = '+' + rewardDisplay;
+            }
         } else {
             const sign = isPos ? '+' : (isNeg ? '-' : '');
             const assetLabel = isGems ? '💎 Gems' : asset.toUpperCase();
@@ -5670,13 +5766,66 @@ async function smartSync(force = false) {
 setInterval(() => smartSync(), 5000);
 
 
-// Load cost config early so UI shows correct costs (email/ad reward, etc.)
+// Load cost config & ad networks early
+function initAdNetworks() {
+    fetch('/api/ads/config')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) return;
+            const ads = data.ads || {};
+
+            // 1. Google AdSense Auto Ads
+            const adsense = ads['adsense'];
+            if (adsense && adsense.enabled && adsense.publisherId) {
+                const pubId = adsense.publisherId.trim();
+                if (pubId && !document.getElementById('adsense-global-sdk')) {
+                    const s = document.createElement('script');
+                    s.id = 'adsense-global-sdk';
+                    s.async = true;
+                    s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${pubId}`;
+                    s.crossOrigin = 'anonymous';
+                    document.head.appendChild(s);
+                }
+            }
+
+            // 2. Monetag / MoneyTag Global Script
+            const monetag = ads['moneytag'] || ads['monetag'];
+            if (monetag && monetag.enabled && (monetag.publisherId || monetag.adUnitId)) {
+                const zoneId = (monetag.publisherId || monetag.adUnitId).trim();
+                if (zoneId && !document.getElementById('monetag-global-sdk')) {
+                    const s = document.createElement('script');
+                    s.id = 'monetag-global-sdk';
+                    s.src = '//libtl.com/sdk.js';
+                    s.setAttribute('data-zone', zoneId);
+                    s.setAttribute('data-sdk', 'show_' + zoneId);
+                    document.head.appendChild(s);
+                }
+            }
+
+            // 3. Adsterra Global Script
+            const adsterra = ads['adsterra'];
+            if (adsterra && adsterra.enabled && (adsterra.adUnitId || adsterra.publisherId)) {
+                const zoneId = (adsterra.adUnitId || adsterra.publisherId).trim();
+                if (zoneId && !document.getElementById('adsterra-global-sdk')) {
+                    const s = document.createElement('script');
+                    s.id = 'adsterra-global-sdk';
+                    s.async = true;
+                    s.src = `//www.highperformanceformat.com/${zoneId}/invoke.js`;
+                    document.head.appendChild(s);
+                }
+            }
+        })
+        .catch(() => { });
+}
+
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         loadAppCostConfig();
+        initAdNetworks();
     });
 } else {
     loadAppCostConfig();
+    initAdNetworks();
 }
 
 const defaultShopItems = [
@@ -7325,7 +7474,9 @@ async function loadMyPurchases() {
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span style="font-size:10px; background:rgba(34,197,94,0.15); color:#22c55e; padding:3px 8px; border-radius:20px; font-weight:700;">PURCHASED</span>
-                        <i class="fas fa-chevron-right" style="color:#6b7280; font-size:12px;"></i>
+                        <button onclick="deleteUserPurchase(${p.boughtAt}, '${p.saleId || ''}', '${d.email || ''}', event)" title="Remove from history" style="background:rgba(239,68,68,0.15); border:none; color:#ef4444; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+                            <i class="fas fa-trash-alt" style="font-size:11px;"></i>
+                        </button>
                     </div>
                 </div>
             </div>`;
@@ -7335,6 +7486,27 @@ async function loadMyPurchases() {
     }
 }
 window.loadMyPurchases = loadMyPurchases;
+
+window.deleteUserPurchase = async function(boughtAt, saleId, email, event) {
+    if (event) event.stopPropagation();
+    if (!confirm('Remove this item from your purchase history?')) return;
+    try {
+        const res = await fetch(`/api/user/${userData.id}/purchases/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ boughtAt, saleId, email })
+        });
+        const data = await res.json();
+        if (data.success) {
+            window.showToast('🗑️ Item removed from history');
+            loadMyPurchases();
+        } else {
+            window.showToast('❌ ' + (data.message || 'Failed to delete'));
+        }
+    } catch (e) {
+        window.showToast('❌ Network error');
+    }
+};
 
 // View purchase detail — shows card/account info like at purchase time
 function viewPurchaseDetail(encoded) {
@@ -11741,8 +11913,8 @@ window.runCopyrightScan = async function () {
         const igExp = scanResult.instagram.explanation;
 
         results.innerHTML = `
-            <div style="font-size:12px;color:#06b6d4;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:12px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;">
-                <i class="fas fa-check-double"></i> Scan Completed! Platform Rights Audit:
+            <div style="font-size:13px;color:#06b6d4;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:12px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;">
+                <i class="fas fa-shield-check"></i> Multi-Platform Copyright & Risk Audit:
             </div>
             
             <div style="display:flex;flex-direction:column;gap:10px;">
@@ -12079,6 +12251,7 @@ window.searchVideoAndPost = async function () {
                         userId: userData.id,
                         url: data.downloadUrl || url,
                         title: data.title || 'Video',
+                        author: data.author || '',
                         platform: data.platform || 'unknown',
                         thumbnail: data.thumbnail || ''
                     })
@@ -12092,6 +12265,16 @@ window.searchVideoAndPost = async function () {
             } catch (sendErr) {
                 console.warn('Send to bot failed:', sendErr);
             }
+
+            // Save video data globally for copyright & SEO checks
+            window.currentVideoData = {
+                url: url,
+                title: data.title || 'TikTok Video',
+                author: data.author || '',
+                description: data.description || data.title || '',
+                platform: data.platform || 'tiktok',
+                thumbnail: data.thumbnail || ''
+            };
 
             // Build result UI
             var formats = data.formats || [];
@@ -12108,8 +12291,12 @@ window.searchVideoAndPost = async function () {
             resultDiv.id = 'videoDownloadResult';
             resultDiv.style.cssText = 'margin-top:20px; padding:16px; background:rgba(255,255,255,0.05); border-radius:16px; border:1px solid rgba(255,255,255,0.1);';
             resultDiv.innerHTML =
-                (data.thumbnail ? '<img src="' + data.thumbnail + '" style="width:100%; border-radius:10px; margin-bottom:12px; max-height:200px; object-fit:cover;" onerror="this.style.display=\'none\'">' : '') +
-                '<p style="color:#fff; font-weight:700; margin-bottom:12px; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (data.title || 'Video') + '</p>' +
+                (data.thumbnail ? '<img src="' + data.thumbnail + '" style="width:100%; border-radius:12px; margin-bottom:12px; max-height:240px; object-fit:cover;" onerror="this.style.display=\'none\'">' : '') +
+                '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">' +
+                    '<span style="background:rgba(6,182,212,0.15); color:#06b6d4; font-weight:700; font-size:11px; padding:2px 8px; border-radius:6px; border:1px solid rgba(6,182,212,0.3); text-transform:uppercase;">' + (data.platform || 'video') + '</span>' +
+                    (data.author ? '<span style="color:#a7f3d0; font-size:12px; font-weight:600;"><i class="fas fa-user"></i> ' + data.author + '</span>' : '') +
+                '</div>' +
+                '<p style="color:#fff; font-weight:700; margin-bottom:12px; font-size:14px; line-height:1.4;">' + (data.title || 'Video') + '</p>' +
                 (formatsHtml || '<a href="' + (data.downloadUrl || url) + '" download target="_blank" style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; background:linear-gradient(135deg,#8b5cf6,#6366f1); color:#fff; border-radius:10px; text-decoration:none; font-weight:700;"><i class="fas fa-download"></i> Download Video</a>') +
                 (data.message ? '<p style="color:#888; font-size:11px; margin-top:8px; text-align:center;">' + data.message + '</p>' : '');
 
@@ -14975,6 +15162,70 @@ window.addEventListener('hashchange', () => {
     }
 });
 
+let currentBgWatermarkTask = 'bg_remove';
+
+function setBgWatermarkTask(task) {
+    currentBgWatermarkTask = task;
+    
+    const bgBtn = document.getElementById('task-bg-remove');
+    const wmBtn = document.getElementById('task-watermark-remove');
+    const mainIcon = document.getElementById('bgWatermarkMainIcon');
+    const placeholderIcon = document.getElementById('bgRemoverPlaceholderIcon');
+    const textEl = document.getElementById('bgRemoverText');
+    const btnEl = document.getElementById('bgRemoverBtn');
+    const infoText = document.getElementById('bgRemoverInfoText');
+    
+    // Reset file input and preview
+    const fileInput = document.getElementById('bgRemoverFile');
+    if (fileInput) fileInput.value = '';
+    const preview = document.getElementById('bgRemoverPreview');
+    const placeholder = document.getElementById('bgRemoverPlaceholder');
+    if (preview) { preview.src = ''; preview.style.display = 'none'; }
+    if (placeholder) placeholder.style.display = 'block';
+    
+    if (btnEl) {
+        btnEl.style.opacity = '0.5';
+        btnEl.style.pointerEvents = 'none';
+    }
+    
+    if (task === 'bg_remove') {
+        if (bgBtn) bgBtn.style.background = 'linear-gradient(135deg,#14b8a6,#06b6d4)';
+        if (bgBtn) bgBtn.style.color = '#fff';
+        if (wmBtn) wmBtn.style.background = 'transparent';
+        if (wmBtn) wmBtn.style.color = 'var(--text-sub)';
+        
+        if (mainIcon) {
+            mainIcon.className = 'fas fa-magic';
+            mainIcon.style.color = '#fff';
+        }
+        if (placeholderIcon) {
+            placeholderIcon.className = 'fas fa-image';
+            placeholderIcon.style.color = '#14b8a6';
+        }
+        if (textEl) textEl.textContent = 'Upload image to remove background';
+        if (btnEl) btnEl.innerHTML = '<i class="fas fa-magic"></i> Remove Background';
+        if (infoText) infoText.innerHTML = '<i class="fas fa-info-circle" style="color:#14b8a6; margin-right:8px;"></i>AI will automatically detect and remove the background';
+    } else {
+        if (wmBtn) wmBtn.style.background = 'linear-gradient(135deg,#14b8a6,#06b6d4)';
+        if (wmBtn) wmBtn.style.color = '#fff';
+        if (bgBtn) bgBtn.style.background = 'transparent';
+        if (bgBtn) bgBtn.style.color = 'var(--text-sub)';
+        
+        if (mainIcon) {
+            mainIcon.className = 'fas fa-eraser';
+            mainIcon.style.color = '#fff';
+        }
+        if (placeholderIcon) {
+            placeholderIcon.className = 'fas fa-eraser';
+            placeholderIcon.style.color = '#06b6d4';
+        }
+        if (textEl) textEl.textContent = 'Upload image to remove watermark';
+        if (btnEl) btnEl.innerHTML = '<i class="fas fa-eraser"></i> Remove Watermark';
+        if (infoText) infoText.innerHTML = '<i class="fas fa-info-circle" style="color:#06b6d4; margin-right:8px;"></i>AI will scan the image and erase watermarks smoothly';
+    }
+}
+window.setBgWatermarkTask = setBgWatermarkTask;
+
 async function removeBackground() {
     var fileInput = document.getElementById('bgRemoverFile');
     var btn = document.getElementById('bgRemoverBtn');
@@ -15001,11 +15252,13 @@ async function removeBackground() {
 
     const currentBalance = userData.balance_tokens || userData.tokens || 0;
     if (currentBalance < bgCost) {
-        window.showToast('❌ Insufficient tokens! Need ' + bgCost + ' TC for BG removal.');
+        const costLabel = currentBgWatermarkTask === 'bg_remove' ? 'BG removal' : 'watermark removal';
+        window.showToast('❌ Insufficient tokens! Need ' + bgCost + ' TC for ' + costLabel + '.');
         return;
     }
 
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Removing Background...';
+    const taskLabel = currentBgWatermarkTask === 'bg_remove' ? 'Background' : 'Watermark';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Removing ' + taskLabel + '...';
     btn.disabled = true;
 
     var old = document.getElementById('bgRemoveResult');
@@ -15016,6 +15269,7 @@ async function removeBackground() {
         formData.append('image', fileInput.files[0]);
         formData.append('userId', userData ? userData.id : 0);
         formData.append('cost', bgCost);
+        formData.append('task', typeof currentBgWatermarkTask !== 'undefined' ? currentBgWatermarkTask : 'bg_remove');
 
         var res = await fetch('/api/bg-remover/remove', { method: 'POST', body: formData });
         var data = await res.json();
@@ -15043,17 +15297,17 @@ async function removeBackground() {
                 var placeholder = document.getElementById('bgRemoverPlaceholder');
                 if (preview) { preview.src = data.resultUrl; preview.style.display = 'block'; }
                 if (placeholder) placeholder.style.display = 'none';
-                showResultWithDownload('bgRemoveResult', data.resultUrl, 'Background Removed', false);
-                window.showToast('✅ Background removed! (-' + bgCost + ' tokens)');
+                showResultWithDownload('bgRemoveResult', data.resultUrl, taskLabel + ' Removed', false);
+                window.showToast('✅ ' + taskLabel + ' removed! (-' + bgCost + ' tokens)');
             } else {
                 window.showToast(data.message || '✅ Done!');
             }
         } else {
-            window.showToast(data.message || 'Failed. Add REMOVE_BG_API_KEY in .env');
+            window.showToast(data.message || 'Failed. Check API keys configuration.');
         }
-    } catch (e) { window.showToast('Network error removing background'); }
+    } catch (e) { window.showToast('Network error processing image'); }
 
-    btn.innerHTML = '<i class="fas fa-magic"></i> Remove Background';
+    btn.innerHTML = currentBgWatermarkTask === 'bg_remove' ? '<i class="fas fa-magic"></i> Remove Background' : '<i class="fas fa-eraser"></i> Remove Watermark';
     btn.disabled = false;
 }
 
@@ -16382,3 +16636,250 @@ window.showPassiveCardModal = showPassiveCardModal;
 
 })();
 // ==================== END BOT HOSTING ====================
+
+
+// ==========================================
+// PYROGRAM SESSION FUNCTIONS
+// ==========================================
+
+async function savePyrogramSession() {
+    if (!userData || !userData.id) return showToast('Please login first', 'error');
+    
+    const phone = document.getElementById('pyroPhone').value.trim();
+    const apiId = document.getElementById('pyroApiId').value.trim();
+    const apiHash = document.getElementById('pyroApiHash').value.trim();
+    const sessionStr = document.getElementById('pyroSession').value.trim();
+    
+    if (!phone || !apiId || !apiHash || !sessionStr) {
+        return showToast('Please fill all fields', 'error');
+    }
+    
+    try {
+        const res = await fetch('/api/pyrogram/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: userData.id,
+                phoneNumber: phone,
+                apiId: apiId,
+                apiHash: apiHash,
+                sessionString: sessionStr
+            })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('Session saved successfully', 'success');
+            // clear fields
+            document.getElementById('pyroPhone').value = '';
+            document.getElementById('pyroApiId').value = '';
+            document.getElementById('pyroApiHash').value = '';
+            document.getElementById('pyroSession').value = '';
+            // reload list
+            loadPyrogramSessions();
+        } else {
+            showToast(data.message || 'Failed to save', 'error');
+        }
+    } catch (e) {
+        showToast('Error saving session', 'error');
+    }
+}
+
+async function loadPyrogramSessions() {
+    if (!userData || !userData.id) return;
+    
+    const listEl = document.getElementById('pyrogramList');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-sub); font-size:12px;"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+    
+    try {
+        const res = await fetch('/api/pyrogram/' + userData.id);
+        const data = await res.json();
+        
+        if (data.success) {
+            if (!data.sessions || data.sessions.length === 0) {
+                listEl.innerHTML = '<div style="text-align:center; padding:20px; background:rgba(255,255,255,0.03); border-radius:12px; font-size:12px; color:var(--text-sub);">No sessions saved yet.</div>';
+                return;
+            }
+            
+            listEl.innerHTML = data.sessions.map(s => `
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; padding:14px; position:relative;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                        <div>
+                            <div style="font-size:14px; font-weight:800; color:#fff; display:flex; align-items:center; gap:6px;">
+                                <i class="fas fa-phone" style="color:#0ea5e9; font-size:12px;"></i> ${s.phoneNumber}
+                            </div>
+                            <div style="font-size:10px; color:var(--text-sub); margin-top:4px;">
+                                Added: ${new Date(s.createdAt).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <button onclick="deletePyrogramSession('${s.id}')" style="background:rgba(239,68,68,0.1); border:none; color:#ef4444; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; justify-content:center; align-items:center;">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                        <div style="background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:8px;">
+                            <div style="font-size:10px; color:var(--text-sub); margin-bottom:2px;">API ID</div>
+                            <div style="font-size:12px; color:#fff; font-family:monospace; display:flex; justify-content:space-between; align-items:center;">
+                                ${s.apiId}
+                                <i class="fas fa-copy" style="color:#0ea5e9; cursor:pointer;" onclick="copyText('${s.apiId}')"></i>
+                            </div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:8px;">
+                            <div style="font-size:10px; color:var(--text-sub); margin-bottom:2px;">API HASH</div>
+                            <div style="font-size:12px; color:#fff; font-family:monospace; display:flex; justify-content:space-between; align-items:center;">
+                                ${s.apiHash.substring(0,6)}...
+                                <i class="fas fa-copy" style="color:#0ea5e9; cursor:pointer;" onclick="copyText('${s.apiHash}')"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:8px;">
+                        <div style="font-size:10px; color:var(--text-sub); margin-bottom:2px;">SESSION STRING</div>
+                        <div style="font-size:12px; color:#fff; font-family:monospace; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.sessionString.substring(0, 20)}...</span>
+                            <button onclick="copyText('${s.sessionString}')" style="background:#0ea5e9; color:#fff; border:none; padding:4px 10px; border-radius:6px; font-size:10px; font-weight:700; cursor:pointer; flex-shrink:0;">
+                                COPY
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+        } else {
+            listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444; font-size:12px;">Failed to load sessions</div>';
+        }
+    } catch (e) {
+        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444; font-size:12px;">Error loading sessions</div>';
+    }
+}
+
+async function deletePyrogramSession(sessionId) {
+    if (!userData || !userData.id) return;
+    if (!confirm('Are you sure you want to delete this session?')) return;
+    
+    try {
+        const res = await fetch(`/api/pyrogram/${userData.id}/${sessionId}`, { method: 'DELETE' });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('Session deleted', 'success');
+            loadPyrogramSessions();
+        } else {
+            showToast(data.message || 'Delete failed', 'error');
+        }
+    } catch (e) {
+        showToast('Error deleting', 'error');
+    }
+}
+
+
+let pyroGenState = {
+    phone: '',
+    apiId: '',
+    apiHash: '',
+    phoneCodeHash: ''
+};
+
+async function pyrogramSendCode() {
+    const phone = document.getElementById('pyroPhoneGen').value.trim();
+    const apiId = document.getElementById('pyroApiIdGen').value.trim();
+    const apiHash = document.getElementById('pyroApiHashGen').value.trim();
+    const btn = document.getElementById('pyroSendCodeBtn');
+
+    if (!phone || !apiId || !apiHash) {
+        return showToast('Please fill phone, API ID and API Hash', 'error');
+    }
+
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/pyrogram/generate/send-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, apiId, apiHash })
+        });
+        const data = await res.json();
+        
+        btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right:8px;"></i> Send OTP Code';
+        btn.disabled = false;
+
+        if (data.success) {
+            showToast('OTP code sent successfully', 'success');
+            pyroGenState = { phone, apiId, apiHash, phoneCodeHash: data.phoneCodeHash };
+            
+            document.getElementById('pyroGeneratorStep1').style.display = 'none';
+            document.getElementById('pyroGeneratorStep2').style.display = 'block';
+            document.getElementById('pyroOtpCode').value = '';
+            document.getElementById('pyro2fa').value = '';
+        } else {
+            showToast(data.message || 'Failed to send code', 'error');
+        }
+    } catch (e) {
+        btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right:8px;"></i> Send OTP Code';
+        btn.disabled = false;
+        showToast('Network error while sending code', 'error');
+    }
+}
+
+function pyrogramCancelGenerate() {
+    document.getElementById('pyroGeneratorStep2').style.display = 'none';
+    document.getElementById('pyroGeneratorStep1').style.display = 'block';
+    pyroGenState = {};
+}
+
+async function pyrogramVerifyCode() {
+    if (!userData || !userData.id) return showToast('Please login first', 'error');
+    
+    const code = document.getElementById('pyroOtpCode').value.trim();
+    const password = document.getElementById('pyro2fa').value.trim();
+    const btn = document.getElementById('pyroVerifyCodeBtn');
+
+    if (!code) {
+        return showToast('Please enter the OTP code', 'error');
+    }
+
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/pyrogram/generate/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: userData.id,
+                phone: pyroGenState.phone,
+                apiId: pyroGenState.apiId,
+                apiHash: pyroGenState.apiHash,
+                phoneCodeHash: pyroGenState.phoneCodeHash,
+                code,
+                password
+            })
+        });
+        const data = await res.json();
+        
+        btn.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i> Generate Session';
+        btn.disabled = false;
+
+        if (data.success) {
+            showToast('Session generated and saved!', 'success');
+            pyrogramCancelGenerate();
+            
+            // clear form
+            document.getElementById('pyroPhoneGen').value = '';
+            document.getElementById('pyroApiIdGen').value = '';
+            document.getElementById('pyroApiHashGen').value = '';
+            
+            loadPyrogramSessions();
+        } else {
+            showToast(data.message || 'Failed to generate session', 'error');
+        }
+    } catch (e) {
+        btn.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i> Generate Session';
+        btn.disabled = false;
+        showToast('Network error while verifying', 'error');
+    }
+}

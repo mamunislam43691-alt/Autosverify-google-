@@ -119,6 +119,178 @@ let botOptions = {
 };
 
 let assistantBot = null;
+let backupBotInstance = null;
+
+async function sendBackupBotMenu(chatId) {
+    if (!backupBotInstance) return;
+    const fs = require('fs');
+    const dbPath = db.filePath || './database.json';
+    const dbSize = fs.existsSync(dbPath) ? (fs.statSync(dbPath).size / 1024).toFixed(2) : '0';
+    const userCount = Object.keys(db.data?.users || {}).length;
+
+    const msgText = `🛡️ **Backup Bot & System Management Panel**\n\n` +
+        `👤 **Master Admin ID:** \`${getAdminId()}\`\n` +
+        `👥 **Total Users:** ${userCount}\n` +
+        `📁 **DB File Size:** ${dbSize} KB\n\n` +
+        `Select an action below or upload a \`.json\` database file to restore:`;
+
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: '📥 Download DB Backup', callback_data: 'backup_download' }, { text: '📊 DB Statistics', callback_data: 'backup_stats' }],
+            [{ text: '🗑️ Clear Temp Logs', callback_data: 'backup_clear_temp' }, { text: '🔄 Reload System', callback_data: 'backup_reload' }]
+        ]
+    };
+
+    await backupBotInstance.sendMessage(chatId, msgText, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+}
+
+async function initBackupBot() {
+    const backupToken = config.BACKUP_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.backupBotToken);
+
+    if (backupBotInstance && typeof backupBotInstance.stopPolling === 'function') {
+        try {
+            console.log('[BACKUP_BOT] Stopping previous backup bot polling...');
+            await backupBotInstance.stopPolling();
+        } catch (e) {
+            console.warn('[BACKUP_BOT] Error stopping backup bot polling:', e.message);
+        }
+    }
+
+    if (isValidToken(backupToken)) {
+        console.log('[BACKUP_BOT] Initializing Backup Bot with token:', backupToken.slice(0, 10) + '...');
+        try {
+            backupBotInstance = new TelegramBot(backupToken, {
+                polling: true,
+                baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
+            });
+
+            try {
+                const server = require('./database/server.js');
+                if (typeof server.setBackupBot === 'function') {
+                    server.setBackupBot(backupBotInstance);
+                }
+            } catch (e) { }
+
+            backupBotInstance.on('message', async (msg) => {
+                if (!msg || !msg.chat) return;
+                const chatId = msg.chat.id;
+                const userId = msg.from ? msg.from.id : chatId;
+
+                if (!isAdmin(userId)) {
+                    await backupBotInstance.sendMessage(chatId, `⚠️ **Access Denied**\n\nThis is a dedicated Backup & Database Management Bot reserved exclusively for Administrator ID: \`${getAdminId() || 'Not Configured'}\`.`, { parse_mode: 'Markdown' }).catch(() => {});
+                    return;
+                }
+
+                if (msg.document && msg.document.file_name && msg.document.file_name.endsWith('.json')) {
+                    try {
+                        const fileLink = await backupBotInstance.getFileLink(msg.document.file_id);
+                        const fetch = require('node-fetch');
+                        const res = await fetch(fileLink);
+                        const fileContent = await res.text();
+                        const parsed = JSON.parse(fileContent);
+
+                        if (!parsed.users && !parsed.apiKeys && !parsed.adminSettings) {
+                            await backupBotInstance.sendMessage(chatId, `❌ **Invalid Backup File**: Uploaded JSON does not match database structure.`, { parse_mode: 'Markdown' });
+                            return;
+                        }
+
+                        global._pendingDbRestore = parsed;
+
+                        await backupBotInstance.sendMessage(chatId, `📥 **Valid Database Backup Received!**\n\nFile Size: ${(fileContent.length / 1024).toFixed(2)} KB\nUsers: ${Object.keys(parsed.users || {}).length}\n\n⚠️ Are you sure you want to restore and overwrite the current database?`, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '✅ Confirm Restore DB', callback_data: 'backup_confirm_restore' }, { text: '❌ Cancel', callback_data: 'backup_cancel_restore' }]
+                                ]
+                            }
+                        });
+                        return;
+                    } catch (e) {
+                        await backupBotInstance.sendMessage(chatId, `❌ **Restore Failed**: Error parsing uploaded JSON file: ${e.message}`, { parse_mode: 'Markdown' });
+                        return;
+                    }
+                }
+
+                if (msg.text && (msg.text.startsWith('/start') || msg.text.startsWith('/menu') || msg.text.startsWith('/backup'))) {
+                    await sendBackupBotMenu(chatId);
+                }
+            });
+
+            backupBotInstance.on('callback_query', async (query) => {
+                const chatId = query.message?.chat?.id;
+                const userId = query.from?.id;
+                const data = query.data;
+
+                if (!isAdmin(userId)) {
+                    await backupBotInstance.answerCallbackQuery(query.id, { text: '⚠️ Admin access required', show_alert: true });
+                    return;
+                }
+
+                await backupBotInstance.answerCallbackQuery(query.id).catch(() => {});
+
+                const fs = require('fs');
+                const dbPath = db.filePath || './database.json';
+
+                if (data === 'backup_download') {
+                    try {
+                        if (fs.existsSync(dbPath)) {
+                            await backupBotInstance.sendDocument(chatId, dbPath, {
+                                caption: `📦 **Database Backup File**\n\nGenerated: ${new Date().toLocaleString()}\nUsers: ${Object.keys(db.data?.users || {}).length}`
+                            });
+                        } else {
+                            await backupBotInstance.sendMessage(chatId, `❌ Database file not found on disk.`);
+                        }
+                    } catch (e) {
+                        await backupBotInstance.sendMessage(chatId, `❌ Error sending backup document: ${e.message}`);
+                    }
+                } else if (data === 'backup_stats') {
+                    const statsMsg = `📊 **Database & System Statistics**\n\n` +
+                        `👤 **Total Users:** ${Object.keys(db.data?.users || {}).length}\n` +
+                        `📢 **Total Groups/Channels:** ${Object.keys(db.data?.groups || {}).length}\n` +
+                        `📦 **DB Size:** ${((fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0) / 1024).toFixed(2)} KB\n` +
+                        `⚙️ **Admin ID:** \`${getAdminId()}\`\n` +
+                        `🟢 **Status:** Operational`;
+                    await backupBotInstance.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown' });
+                } else if (data === 'backup_clear_temp') {
+                    if (db.data.serverLogs) db.data.serverLogs = [];
+                    if (db.data.mailSessions) db.data.mailSessions = {};
+                    db.save();
+                    await backupBotInstance.sendMessage(chatId, `✅ **Temporary logs and sessions cleared successfully.**`);
+                } else if (data === 'backup_reload') {
+                    db.load();
+                    await reloadBotInstance();
+                    await backupBotInstance.sendMessage(chatId, `🔄 **System reloaded from disk and bot instances restarted.**`);
+                } else if (data === 'backup_confirm_restore') {
+                    if (global._pendingDbRestore) {
+                        if (fs.existsSync(dbPath)) {
+                            try {
+                                if (!fs.existsSync('./backups')) fs.mkdirSync('./backups');
+                                fs.copyFileSync(dbPath, `./backups/pre_restore_${Date.now()}.json`);
+                            } catch (e) { }
+                        }
+                        db.data = global._pendingDbRestore;
+                        db.save();
+                        db.load();
+                        global._pendingDbRestore = null;
+                        await backupBotInstance.sendMessage(chatId, `✅ **Database Restored Successfully!** System state updated.`);
+                    } else {
+                        await backupBotInstance.sendMessage(chatId, `⚠️ No pending restore file found. Please upload a .json backup file first.`);
+                    }
+                } else if (data === 'backup_cancel_restore') {
+                    global._pendingDbRestore = null;
+                    await backupBotInstance.sendMessage(chatId, `❌ Database restore cancelled.`);
+                }
+            });
+
+            console.log('✅ Backup Bot is now polling messages and ready.');
+        } catch (err) {
+            console.error('[BACKUP_BOT] Failed to start backup bot:', err.message);
+            backupBotInstance = null;
+        }
+    } else {
+        backupBotInstance = null;
+    }
+}
 
 async function initAssistantBot() {
     const settings = db.data?.adminSettings?.groupManagement || {};
@@ -173,8 +345,9 @@ async function reloadBotInstance() {
         console.warn("⚠️ Error stopping bot polling:", e.message);
     }
 
-    // Also reload the assistant bot if configured
+    // Reload assistant bot & backup bot if configured
     await initAssistantBot();
+    await initBackupBot();
 
     const finalToken = config.TELEGRAM_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.botToken);
     
@@ -711,9 +884,6 @@ async function handleLiveStreamEvent(chatId, eventType, msg) {
                 await bot.unpinChatMessage(chatId, { message_id: pinnedId }).catch(err => {
                     bot.unpinChatMessage(chatId).catch(() => {});
                 });
-                await bot.deleteMessage(chatId, pinnedId).catch(err => {
-                    console.log(`[LIVESTREAM] Failed to delete active live stream start message: ${err.message}`);
-                });
                 activeLiveStreamPins.delete(chatId);
             }
             
@@ -721,12 +891,7 @@ async function handleLiveStreamEvent(chatId, eventType, msg) {
             if (settings.userbotEnabled && settings.userbotMusicPlayback) {
                 leaveMsg += `\n🎵 **Music/Audio Playback player stopped.**`;
             }
-            const sentLeave = await bot.sendMessage(chatId, leaveMsg, { parse_mode: 'Markdown' }).catch(() => {});
-            if (sentLeave) {
-                setTimeout(() => {
-                    bot.deleteMessage(chatId, sentLeave.message_id).catch(() => {});
-                }, 15000); // Auto-delete ended message after 15 seconds
-            }
+            await bot.sendMessage(chatId, leaveMsg, { parse_mode: 'Markdown' }).catch(() => {});
         }
     } catch (err) {
         console.error(`[LIVESTREAM] Error handling live stream event:`, err);
@@ -771,6 +936,9 @@ bot.on('message', async (msg) => {
 // Detect live stream start/end events and reactions in channel posts
 bot.on('channel_post', async (msg) => {
     if (!msg.chat) return;
+    
+    // Save channel to database
+    db.saveGroup(msg.chat.id, msg.chat.title || 'Channel', 'channel');
     
     // Check if live stream event
     if (msg.video_chat_started || msg.voice_chat_started) {
@@ -1933,10 +2101,6 @@ bot.on('message', async (msg) => {
     // Get group management settings
     const settings = db.data?.adminSettings?.groupManagement || {};
 
-    // IMPORTANT: Never delete messages from admins, creators, or channel posts
-    if (msg.sender_chat) return; // Channel-linked post
-    if (msg.forward_from_chat) return; // Forwarded from channel
-
     const isSystemMessage = !!(
         msg.new_chat_members ||
         msg.left_chat_member ||
@@ -1952,16 +2116,35 @@ bot.on('message', async (msg) => {
         msg.delete_chat_photo ||
         msg.group_chat_created ||
         msg.supergroup_chat_created ||
-        msg.channel_chat_created
+        msg.channel_chat_created ||
+        msg.message_auto_delete_timer_changed ||
+        msg.migrate_to_chat_id ||
+        msg.migrate_from_chat_id ||
+        msg.proximity_alert_triggered ||
+        msg.forum_topic_created ||
+        msg.forum_topic_edited ||
+        msg.forum_topic_closed ||
+        msg.forum_topic_reopened ||
+        msg.general_forum_topic_hidden ||
+        msg.general_forum_topic_unhidden ||
+        msg.giveaway_created ||
+        msg.giveaway_winners ||
+        msg.giveaway_completed ||
+        msg.boost_added ||
+        msg.chat_background_set
     );
 
-    // For user messages — check if system message first (system messages have no msg.from typically)
-    // Only check admin status if msg.from exists (system messages won't have from)
-    if (msg.from && !msg.from.is_bot && !isSystemMessage) {
-        try {
-            const member = await bot.getChatMember(chatId, msg.from.id);
-            if (['administrator', 'creator'].includes(member.status)) return;
-        } catch (e) { /* ignore — proceed with system message checks */ }
+    // If NOT a system message, protect channel-linked posts & admin messages
+    if (!isSystemMessage) {
+        if (msg.sender_chat) return; // Channel-linked post
+        if (msg.forward_from_chat) return; // Forwarded from channel
+
+        if (msg.from && !msg.from.is_bot) {
+            try {
+                const member = await bot.getChatMember(chatId, msg.from.id);
+                if (['administrator', 'creator'].includes(member.status)) return;
+            } catch (e) { /* ignore */ }
+        }
     }
 
     // Check if this is a system message that should be deleted
