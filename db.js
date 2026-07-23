@@ -793,25 +793,6 @@ class Database {
             }
         }
 
-        if (Object.keys(this.data.groups).length === 0 && !reqChannel && !reqGroup) {
-            this.data.groups['@MyTelegramChannel'] = {
-                id: '@MyTelegramChannel',
-                title: 'My Telegram Channel',
-                type: 'channel',
-                memberCount: 1250,
-                addedAt: Date.now(),
-                lastActive: Date.now()
-            };
-            this.data.groups['@MyTelegramGroup'] = {
-                id: '@MyTelegramGroup',
-                title: 'My Telegram Group',
-                type: 'group',
-                memberCount: 450,
-                addedAt: Date.now(),
-                lastActive: Date.now()
-            };
-        }
-
         return Object.values(this.data.groups || {});
     }
 

@@ -4391,22 +4391,14 @@
                         <!-- Select Group to Stream -->
                         <div class="glass-card p-6 rounded-2xl border border-white/5">
                             <h3 class="font-bold mb-4 flex items-center gap-2">
-                                <i class="fas fa-satellite-dish text-blue-400"></i> Target Stream Group or Channel
+                                <i class="fas fa-satellite-dish text-blue-400"></i> Target Stream Group
                             </h3>
-                            <div class="flex gap-2 mb-3">
+                            <div class="flex gap-2 mb-4">
                                 <select id="stream-group-select" class="flex-1 bg-black/40 border border-white/10 rounded-xl p-3 focus:border-purple-500 outline-none text-sm">
                                     <option value="">Select a Group/Channel...</option>
                                 </select>
-                                <button onclick="refreshStreamGroups()" class="bg-blue-600/20 text-blue-400 px-4 py-2 rounded-xl hover:bg-blue-600/40 transition border border-blue-500/20" title="Refresh List">
+                                <button onclick="refreshStreamGroups()" class="bg-blue-600/20 text-blue-400 px-4 py-2 rounded-xl hover:bg-blue-600/40 transition border border-blue-500/20">
                                     <i class="fas fa-sync-alt"></i>
-                                </button>
-                            </div>
-                            
-                            <!-- Add Custom Channel / Group -->
-                            <div class="flex gap-2 mb-4">
-                                <input type="text" id="new-stream-group-input" placeholder="Enter channel username (@mychannel) or ID..." class="flex-1 bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-purple-500 outline-none font-mono">
-                                <button onclick="addStreamGroup()" class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-3 rounded-xl transition text-sm flex items-center gap-2 whitespace-nowrap shadow-lg">
-                                    <i class="fas fa-plus"></i> Add Channel/Group
                                 </button>
                             </div>
                             
@@ -8722,8 +8714,6 @@
             } else if (p === 'accounts') {
                 p = 'services';
                 if (typeof selectCategory === 'function') setTimeout(() => selectCategory('accounts'), 50);
-            } else if (p === 'db') {
-                p = 'database';
             }
 
             // Show target page
@@ -8864,10 +8854,6 @@
                         break;
                     case 'pyrogram':
                         loadAdminPyrograms();
-                        break;
-                    case 'livestream':
-                        if (typeof loadStreamGroupSelectors === 'function') loadStreamGroupSelectors();
-                        if (typeof loadUserbotSettings === 'function') loadUserbotSettings();
                         break;
                     case 'cards':
                         loadSectionServices('cards');
@@ -9644,39 +9630,39 @@
                         return;
                     }
                     const map = {
-                        'dash-total-users': data.totalUsers ?? 0,
-                        'dash-active': data.activeToday ?? 0,
-                        'dash-total-tokens': data.totalTokens ?? 0,
-                        'dash-total-gems': data.totalGems ?? 0,
-                        'dash-total-usdt': data.totalUsdt ?? 0,
-                        'dash-verified': data.verifiedUsers ?? 0,
-                        'dash-shop-items': data.shopItems ?? 0,
-                        'dash-accounts': data.accounts ?? 0,
-                        'dash-gmails': data.gmailsUsed ?? 0,
-                        'dash-vpns': data.totalVpns ?? 0,
-                        'dash-cards': data.totalCards ?? 0,
-                        'dash-apikeys': data.apiKeys ?? 0,
+                        'dash-total-users': data.totalUsers,
+                        'dash-active': data.activeToday,
+                        'dash-total-tokens': data.totalTokens,
+                        'dash-total-gems': data.totalGems,
+                        'dash-total-usdt': data.totalUsdt,
+                        'dash-verified': data.verifiedUsers,
+                        'dash-shop-items': data.shopItems,
+                        'dash-accounts': data.accounts,
+                        'dash-gmails': data.gmailsUsed,
+                        'dash-vpns': data.totalVpns,
+                        'dash-cards': data.totalCards,
+                        'dash-apikeys': data.apiKeys || 0,
                         // New stats
-                        'dash-deposits': data.totalDeposits ?? 0,
-                        'dash-withdrawals': data.totalWithdrawals ?? 0,
-                        'dash-pending': data.pendingDeposits ?? 0,
-                        'dash-revenue': data.revenue ?? 0,
-                        'dash-services': data.serviceCategories ?? 0,
-                        'dash-total-stock': data.totalServiceStock ?? 0,
+                        'dash-deposits': data.totalDeposits,
+                        'dash-withdrawals': data.totalWithdrawals,
+                        'dash-pending': data.pendingDeposits,
+                        'dash-revenue': data.revenue,
+                        'dash-services': data.serviceCategories || 0,
+                        'dash-total-stock': data.totalServiceStock || 0,
                         'dash-backup-time': data.lastBackup || 'Never',
 
                         // Newly added dashboard cards
-                        'dash-smm-orders': data.smmOrdersCount ?? 0,
-                        'dash-tg-groups': data.telegramGroupsCount ?? 0,
-                        'dash-promo-codes': data.promoCodesCount ?? 0,
-                        'dash-tasks': data.tasksCount ?? 0,
-                        'dash-ad-networks': data.adNetworksCount ?? 0,
+                        'dash-smm-orders': data.smmOrdersCount,
+                        'dash-tg-groups': data.telegramGroupsCount,
+                        'dash-promo-codes': data.promoCodesCount,
+                        'dash-tasks': data.tasksCount,
+                        'dash-ad-networks': data.adNetworksCount,
 
                         // Monitoring Cards
                         'dash-gmails-monitor': (data.gmails?.used || 0) + '/' + (data.gmails?.total || 0),
-                        'dash-apikeys-monitor': data.api?.activeKeys ?? 0,
-                        'dash-api-calls': data.api?.totalCalls ?? 0,
-                        'dash-api-users': data.api?.activeUsers ?? 0
+                        'dash-apikeys-monitor': data.api?.activeKeys || 0,
+                        'dash-api-calls': data.api?.totalCalls || 0,
+                        'dash-api-users': data.api?.activeUsers || 0
                     };
 
                     // Specific formatting for Gmail bar
@@ -9692,14 +9678,10 @@
                         const el = document.getElementById(id);
                         if (el) {
                             let formatted = '0';
-                            try {
-                                if (typeof val === 'number') {
-                                    formatted = formatCompact(val);
-                                } else {
-                                    formatted = val !== undefined && val !== null ? String(val) : '0';
-                                }
-                            } catch (e) {
-                                formatted = String(val ?? '0');
+                            if (typeof val === 'number') {
+                                formatted = formatCompact(val);
+                            } else {
+                                formatted = val || '0';
                             }
                             if (id === 'dash-revenue') {
                                 el.textContent = '$' + formatted;
@@ -9728,16 +9710,14 @@
                     const growthEl = document.getElementById('dash-users-growth');
                     if (growthEl && data.userGrowth !== undefined) {
                         growthEl.textContent = (data.userGrowth > 0 ? '+' : '') + data.userGrowth + '%';
-                        if (growthEl.parentElement) {
-                            growthEl.parentElement.className = data.userGrowth >= 0 ?
-                                'text-xs text-green-400' : 'text-xs text-red-400';
-                        }
+                        growthEl.parentElement.className = data.userGrowth >= 0 ?
+                            'text-xs text-green-400' : 'text-xs text-red-400';
                     }
                 }).catch(err => {
                     console.error('[Stats] Failed to load admin stats:', err.message);
                     // Show 0 instead of ... on error
                     document.querySelectorAll('[id^="dash-"]').forEach(el => {
-                        if (el.textContent === '...' || !el.textContent.trim()) el.textContent = '0';
+                        if (el.textContent === '...') el.textContent = '0';
                     });
                 });
         }
@@ -16563,32 +16543,6 @@
             setTimeout(() => showToast('✅ Group list refreshed.'), 1000);
         }
 
-        async function addStreamGroup() {
-            const input = document.getElementById('new-stream-group-input');
-            const chatId = input ? input.value.trim() : '';
-            if (!chatId) {
-                showToast('⚠️ Please enter a Telegram Channel or Group username/ID (e.g. @mychannel)', 'error');
-                return;
-            }
-            try {
-                const res = await fetch('/api/admin/groups/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: chatId, title: chatId, type: chatId.startsWith('@') ? 'channel' : 'group' })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showToast('✅ Group/Channel added successfully!');
-                    if (input) input.value = '';
-                    loadStreamGroupSelectors();
-                } else {
-                    showToast('❌ Failed: ' + (data.message || 'Unknown error'), 'error');
-                }
-            } catch (e) {
-                showToast('❌ Network error: ' + e.message, 'error');
-            }
-        }
-
         async function startVideoChat() {
             const select = document.getElementById('stream-group-select');
             const targetChat = select?.value || document.getElementById('ls_target_chat')?.value || document.getElementById('ls_custom_chat')?.value;
@@ -16685,8 +16639,6 @@
             nav('dashboard');
             // Load mother email status on start
             setTimeout(loadMotherEmailStatus, 1000);
-            setTimeout(loadStreamGroupSelectors, 1500);
-            setTimeout(loadUserbotSettings, 1500);
         });
         // Auto Refresh logic for admin chat
         setInterval(() => {

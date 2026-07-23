@@ -6237,24 +6237,6 @@ app.get('/api/admin/groups', async (req, res) => {
     res.json({ success: true, groups: db.getGroups() });
 });
 
-// API: Admin - Add Group or Channel manually
-app.post('/api/admin/groups/add', (req, res) => {
-    const { id, title, type } = req.body;
-    if (!id) return res.json({ success: false, message: 'Chat ID or Username required' });
-    if (!db.data.groups) db.data.groups = {};
-    const chatId = String(id).trim();
-    db.data.groups[chatId] = {
-        id: chatId,
-        title: title || chatId,
-        type: type || (chatId.startsWith('@') ? 'channel' : 'group'),
-        memberCount: 0,
-        addedAt: Date.now(),
-        lastActive: Date.now()
-    };
-    db.save();
-    res.json({ success: true, groups: db.getGroups() });
-});
-
 // API: Admin - Group Settings (GET)
 app.get('/api/admin/group-settings', (req, res) => {
     const settings = db.getGroupSettings();
@@ -11228,15 +11210,19 @@ async function _distributeLeaderboardRewards(period) {
 
                 const fullMsg = referralText;
 
-                // Post to main channel and main group only (automated posts do not go to other arbitrary groups/channels)
+                // Post to main channel
                 const mainChannel = db.data.settings && db.data.settings.requiredChannel;
                 if (mainChannel) {
                     await bot.sendMessage(mainChannel, fullMsg, { parse_mode: 'Markdown' }).catch(() => { });
                 }
 
-                const mainGroup = db.data.settings && db.data.settings.requiredGroup;
-                if (mainGroup) {
-                    await bot.sendMessage(mainGroup, fullMsg, { parse_mode: 'Markdown' }).catch(() => { });
+                // Post to all connected groups
+                const groups = db.data.groups || {};
+                for (const groupId of Object.keys(groups)) {
+                    try {
+                        await bot.sendMessage(groupId, fullMsg, { parse_mode: 'Markdown' }).catch(() => { });
+                        await new Promise(r => setTimeout(r, 300)); // small delay to avoid flood limits
+                    } catch (e) { }
                 }
             }
         } catch (e) {
