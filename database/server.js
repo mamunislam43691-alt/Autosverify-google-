@@ -11228,19 +11228,15 @@ async function _distributeLeaderboardRewards(period) {
 
                 const fullMsg = referralText;
 
-                // Post to main channel
+                // Post to main channel and main group only (automated posts do not go to other arbitrary groups/channels)
                 const mainChannel = db.data.settings && db.data.settings.requiredChannel;
                 if (mainChannel) {
                     await bot.sendMessage(mainChannel, fullMsg, { parse_mode: 'Markdown' }).catch(() => { });
                 }
 
-                // Post to all connected groups
-                const groups = db.data.groups || {};
-                for (const groupId of Object.keys(groups)) {
-                    try {
-                        await bot.sendMessage(groupId, fullMsg, { parse_mode: 'Markdown' }).catch(() => { });
-                        await new Promise(r => setTimeout(r, 300)); // small delay to avoid flood limits
-                    } catch (e) { }
+                const mainGroup = db.data.settings && db.data.settings.requiredGroup;
+                if (mainGroup) {
+                    await bot.sendMessage(mainGroup, fullMsg, { parse_mode: 'Markdown' }).catch(() => { });
                 }
             }
         } catch (e) {

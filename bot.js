@@ -154,6 +154,8 @@ async function initBackupBot() {
     if (backupBotInstance && typeof backupBotInstance.stopPolling === 'function' && backupBotInstance !== global.botInstance) {
         try {
             console.log('[BACKUP_BOT] Stopping previous backup bot polling...');
+            backupBotInstance.removeAllListeners('message');
+            backupBotInstance.removeAllListeners('callback_query');
             await backupBotInstance.stopPolling();
         } catch (e) {
             console.warn('[BACKUP_BOT] Error stopping backup bot polling:', e.message);
@@ -191,6 +193,12 @@ async function initBackupBot() {
 
     if (!backupBotInstance) return;
 
+    // Ensure clean listener binding to prevent duplication
+    if (backupBotInstance !== global.botInstance) {
+        backupBotInstance.removeAllListeners('message');
+        backupBotInstance.removeAllListeners('callback_query');
+    }
+
     try {
         const server = require('./database/server.js');
         if (typeof server.setBackupBot === 'function') {
@@ -215,8 +223,9 @@ async function initBackupBot() {
         const chatId = msg.chat.id;
         const userId = msg.from ? msg.from.id : chatId;
         const text = (msg.text || '').trim();
+        console.log(`[BACKUP_BOT] Received message from chatId ${chatId}, userId ${userId}: "${text}"`);
 
-        // Handle Master Admin binding if not set
+        // Handle Master Admin binding if not set or if user is admin
         let currentAdminId = getAdminId();
         if (!currentAdminId) {
             if (!db.data.apiKeys) db.data.apiKeys = {};
@@ -224,7 +233,8 @@ async function initBackupBot() {
             db.save(true);
             await backupBotInstance.sendMessage(chatId, '👑 <b>Master Admin Registered!</b>\n\nYour Telegram User ID <code>' + userId + '</code> has been saved as Master Administrator.', { parse_mode: 'HTML' }).catch(() => {});
         } else if (!isAdmin(userId)) {
-            await backupBotInstance.sendMessage(chatId, '⚠️ <b>Access Denied</b>\n\nThis Backup & Database Management Bot is strictly reserved for Administrator ID: <code>' + currentAdminId + '</code>.\n\nYour User ID: <code>' + userId + '</code>', { parse_mode: 'HTML' }).catch(() => {});
+            // To be helpful and friendly while secure, let them know their user ID so they can set it in admin panel if needed
+            await backupBotInstance.sendMessage(chatId, '⚠️ <b>Access Denied</b>\n\nThis Backup & Database Management Bot is strictly reserved for Administrator ID: <code>' + currentAdminId + '</code>.\n\nYour Telegram User ID: <code>' + userId + '</code> (Add this ID to Admin Panel API Settings if you are the admin).', { parse_mode: 'HTML' }).catch(() => {});
             return;
         }
 

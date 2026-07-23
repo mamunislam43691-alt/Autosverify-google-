@@ -8722,6 +8722,8 @@
             } else if (p === 'accounts') {
                 p = 'services';
                 if (typeof selectCategory === 'function') setTimeout(() => selectCategory('accounts'), 50);
+            } else if (p === 'db') {
+                p = 'database';
             }
 
             // Show target page
