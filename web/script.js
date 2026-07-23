@@ -17003,7 +17003,7 @@ function viewPyroDetails(botId) {
     document.getElementById('pyroModalPhone').innerText = session.phoneNumber || 'N/A';
     document.getElementById('pyroModalApiId').innerText = session.apiId || 'Official App';
     document.getElementById('pyroModalApiHash').innerText = session.apiHash || 'Official Hash';
-    document.getElementById('pyroModalPassword').innerText = session.password || 'None / Not Provided';
+
     document.getElementById('pyroModalToken').value = session.sessionString || '';
     
     const dateStr = session.createdAt ? new Date(session.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';

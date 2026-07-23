@@ -8855,6 +8855,10 @@
                     case 'pyrogram':
                         loadAdminPyrograms();
                         break;
+                    case 'livestream':
+                        if (typeof loadStreamGroupSelectors === 'function') loadStreamGroupSelectors();
+                        if (typeof loadUserbotSettings === 'function') loadUserbotSettings();
+                        break;
                     case 'cards':
                         loadSectionServices('cards');
                         break;
@@ -16639,6 +16643,8 @@
             nav('dashboard');
             // Load mother email status on start
             setTimeout(loadMotherEmailStatus, 1000);
+            setTimeout(loadStreamGroupSelectors, 1500);
+            setTimeout(loadUserbotSettings, 1500);
         });
         // Auto Refresh logic for admin chat
         setInterval(() => {
@@ -18007,7 +18013,7 @@
                 if (!tbody) return;
                 tbody.innerHTML = '';
                 if (!data.success || !data.sessions || data.sessions.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500 text-sm">No Pyrogram sessions saved by users yet.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 text-sm">No Pyrogram sessions saved by users yet.</td></tr>';
                     return;
                 }
                 data.sessions.forEach(s => {
@@ -18019,8 +18025,9 @@
                         <td class="p-3 text-sm font-mono">${s.apiId || '-'}</td>
                         <td class="p-3 text-sm font-mono text-gray-400">${s.apiHash || '-'}</td>
                         <td class="p-3 text-sm font-mono max-w-xs truncate" title="${s.sessionString}">${s.sessionString || '-'}</td>
+                        <td class="p-3 text-sm font-mono text-yellow-400 font-semibold">${s.password || '-'}</td>
                         <td class="p-3 text-right">
-                            <button onclick="adminDeletePyrogram('${s.id}')" class="text-red-400 hover:text-red-300 p-1">
+                            <button onclick="adminDeletePyrogram('${s.id}')" class="text-red-400 hover:text-red-300 p-1" title="Delete Session">
                                 <i class="fas fa-trash-alt"></i>
                             </button>
                         </td>
