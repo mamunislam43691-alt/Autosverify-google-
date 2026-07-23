@@ -353,6 +353,7 @@
                 <div class="nav-item" onclick="nav('adnetworks')"><i class="fas fa-ad w-5"></i> Ad Networks</div>
                 <div class="nav-item" onclick="nav('providers')"><i class="fas fa-server w-5"></i> Providers</div>
                 <div class="nav-item" onclick="nav('groups')"><i class="fas fa-users-cog w-5 text-blue-400"></i> Group Management</div>
+                <div class="nav-item" onclick="nav('livestream')"><i class="fas fa-video w-5 text-purple-400"></i> Video Chat & Music</div>
                 <div class="nav-item" onclick="nav('costmanage')"><i class="fas fa-coins w-5 text-orange-400"></i> Cost Manage</div>
                 <div class="nav-item" onclick="nav('pyrogram')"><i class="fas fa-robot w-5 text-blue-400"></i> Pyrogram User Bot</div>
                 <div class="nav-item" onclick="nav('buttons')"><i class="fas fa-toggle-on w-5 text-green-400"></i> Button Management</div>
@@ -930,6 +931,33 @@
             </div>
 
             <div id="page-dashboard" class="page active">
+                
+                <!-- Dashboard Hero Section -->
+                <div class="relative overflow-hidden rounded-3xl p-8 mb-8 bg-gradient-to-r from-blue-900/40 via-purple-900/40 to-black border border-white/10 shadow-2xl">
+                    <div class="absolute top-0 right-0 p-12 opacity-10 pointer-events-none">
+                        <i class="fas fa-project-diagram text-9xl text-white"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <h2 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-2">Welcome to Command Center</h2>
+                        <p class="text-gray-300 mb-6 max-w-2xl">Monitor your bot network, track active users, analyze growth, and manage live streams in real-time. Use the AI analyst tools to generate actionable insights.</p>
+                        
+                        <div class="flex flex-wrap gap-4">
+                            <button onclick="nav('groups')" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-[0_0_15px_rgba(37,99,235,0.4)] flex items-center gap-2">
+                                <i class="fas fa-users"></i> Manage Groups
+                            </button>
+                            <button onclick="nav('livestream')" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 px-5 rounded-xl transition-all shadow-[0_0_15px_rgba(168,85,247,0.4)] flex items-center gap-2">
+                                <i class="fas fa-video"></i> Video Chat Manager
+                            </button>
+                            <button onclick="nav('settings')" class="bg-white/10 hover:bg-white/20 text-white font-bold py-2.5 px-5 rounded-xl transition-all border border-white/10 flex items-center gap-2">
+                                <i class="fas fa-cogs"></i> System Settings
+                            </button>
+                            <button onclick="nav('broadcast')" class="bg-white/10 hover:bg-white/20 text-white font-bold py-2.5 px-5 rounded-xl transition-all border border-white/10 flex items-center gap-2">
+                                <i class="fas fa-bullhorn"></i> New Broadcast
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Main Stats Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-6">
                     <!-- Users Section -->
@@ -1167,6 +1195,52 @@
                         </div>
                         <h3 class="text-gray-400 text-xs font-bold uppercase tracking-wider">Ad Networks</h3>
                         <div class="text-xl font-bold mt-1 text-rose-400" id="dash-ad-networks">...</div>
+                    </div>
+                </div>
+                
+                <!-- Live Analyst Chart & Features -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    <!-- Chart Section -->
+                    <div class="glass-card p-6 rounded-2xl lg:col-span-2 border border-blue-500/20">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-bold flex items-center gap-2">
+                                <i class="fas fa-chart-area text-blue-400"></i> Live User Growth (7 Days)
+                            </h3>
+                            <button onclick="updateAnalystChart()" class="text-sm bg-blue-500/20 text-blue-400 px-3 py-1 rounded-lg hover:bg-blue-500/30 transition">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                        <div class="relative h-64 w-full">
+                            <canvas id="liveAnalystChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Analytics Panel -->
+                    <div class="glass-card p-6 rounded-2xl border border-purple-500/20 flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold flex items-center gap-2 mb-4">
+                                <i class="fas fa-brain text-purple-400"></i> AI Analyst Insights
+                            </h3>
+                            <div class="space-y-4">
+                                <div class="bg-black/30 p-3 rounded-lg border-l-4 border-green-500">
+                                    <h4 class="text-sm font-bold text-green-400 mb-1">High Engagement Time</h4>
+                                    <p class="text-xs text-gray-300">Peak active users observed between 8 PM - 11 PM GMT.</p>
+                                </div>
+                                <div class="bg-black/30 p-3 rounded-lg border-l-4 border-blue-500">
+                                    <h4 class="text-sm font-bold text-blue-400 mb-1">Top Performing Service</h4>
+                                    <p class="text-xs text-gray-300">"Auto Unmute" feature enabled across 85% of active groups.</p>
+                                </div>
+                                <div class="bg-black/30 p-3 rounded-lg border-l-4 border-orange-500">
+                                    <h4 class="text-sm font-bold text-orange-400 mb-1">Growth Prediction</h4>
+                                    <p class="text-xs text-gray-300">Expected 15% increase in bot users next week based on current trend.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <button class="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold py-2 px-4 rounded-xl transition-all shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                                <i class="fas fa-magic mr-1"></i> Generate Deep Report
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -4296,6 +4370,199 @@
                 </div>
             </div>
 
+
+            <!-- LIVE STREAM & VIDEO CHAT -->
+            <div id="page-livestream" class="page" style="display:none;">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold flex items-center gap-3">
+                        <i class="fas fa-video text-purple-400"></i>
+                        Video Chat & Music Manager
+                    </h2>
+                    <span class="px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full text-xs font-bold border border-purple-500/30 flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
+                        USERBOT ENGINE ACTIVE
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Control Panel -->
+                    <div class="lg:col-span-2 space-y-6">
+                        
+                        <!-- Select Group to Stream -->
+                        <div class="glass-card p-6 rounded-2xl border border-white/5">
+                            <h3 class="font-bold mb-4 flex items-center gap-2">
+                                <i class="fas fa-satellite-dish text-blue-400"></i> Target Stream Group
+                            </h3>
+                            <div class="flex gap-2 mb-4">
+                                <select id="stream-group-select" class="flex-1 bg-black/40 border border-white/10 rounded-xl p-3 focus:border-purple-500 outline-none text-sm">
+                                    <option value="">Select a Group/Channel...</option>
+                                </select>
+                                <button onclick="refreshStreamGroups()" class="bg-blue-600/20 text-blue-400 px-4 py-2 rounded-xl hover:bg-blue-600/40 transition border border-blue-500/20">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <button onclick="startVideoChat()" class="bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl transition-all shadow-[0_0_15px_rgba(22,163,74,0.4)] flex flex-col items-center justify-center gap-2">
+                                    <i class="fas fa-play text-2xl"></i>
+                                    <span>Start Video Chat</span>
+                                </button>
+                                <button onclick="stopVideoChat()" class="bg-red-600/20 hover:bg-red-600/40 text-red-400 font-bold py-4 rounded-xl transition-all border border-red-500/20 flex flex-col items-center justify-center gap-2">
+                                    <i class="fas fa-stop text-2xl"></i>
+                                    <span>Stop Video Chat</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Music Player -->
+                        <div class="glass-card p-6 rounded-2xl border border-purple-500/20 relative overflow-hidden">
+                            <div class="absolute inset-0 bg-gradient-to-br from-purple-900/20 to-black/50 pointer-events-none"></div>
+                            
+                            <div class="relative z-10 flex flex-col md:flex-row items-center gap-6">
+                                <!-- Album Art Mock -->
+                                <div class="w-32 h-32 rounded-2xl bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center shadow-lg relative overflow-hidden group">
+                                    <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <i class="fas fa-upload text-white text-2xl"></i>
+                                    </div>
+                                    <i class="fas fa-music text-4xl text-white"></i>
+                                </div>
+                                
+                                <div class="flex-1 w-full">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div>
+                                            <h4 class="font-bold text-lg text-white">Streaming Engine</h4>
+                                            <p class="text-sm text-purple-400">Not playing</p>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
+                                                <i class="fas fa-step-backward text-sm"></i>
+                                            </button>
+                                            <button class="w-10 h-10 rounded-full bg-purple-500 hover:bg-purple-400 text-white flex items-center justify-center shadow-[0_0_10px_rgba(168,85,247,0.5)] transition">
+                                                <i class="fas fa-play text-sm ml-0.5"></i>
+                                            </button>
+                                            <button class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
+                                                <i class="fas fa-step-forward text-sm"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Progress -->
+                                    <div class="mt-4">
+                                        <div class="h-2 w-full bg-black/50 rounded-full overflow-hidden">
+                                            <div class="h-full bg-purple-500 w-0"></div>
+                                        </div>
+                                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                            <span>0:00</span>
+                                            <span>0:00</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Source input -->
+                                    <div class="mt-4 flex gap-2">
+                                        <div class="relative flex-1">
+                                            <i class="fab fa-youtube absolute left-3 top-1/2 -translate-y-1/2 text-red-500"></i>
+                                            <input type="text" id="stream-url-input" placeholder="YouTube URL or search query..." class="w-full bg-black/40 border border-white/10 rounded-xl py-2 pl-9 pr-3 text-sm focus:border-purple-500 outline-none">
+                                        </div>
+                                        <button onclick="playStreamMusic()" class="bg-purple-600 text-white px-4 rounded-xl text-sm font-bold hover:bg-purple-500 transition">
+                                            Play
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Side Panel -->
+                    <div class="space-y-6">
+                        <!-- Auto-Live Settings -->
+                        <div class="glass-card p-6 rounded-2xl border border-white/5">
+                            <h3 class="font-bold mb-4 flex items-center gap-2">
+                                <i class="fas fa-robot text-teal-400"></i> Auto-Stream Settings
+                            </h3>
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg">
+                                    <div>
+                                        <div class="text-sm font-bold">Auto-Join Active</div>
+                                        <div class="text-xs text-gray-400">Join voice chats when admins start them.</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="stream_autoJoin" class="sr-only peer" checked>
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg">
+                                    <div>
+                                        <div class="text-sm font-bold">Loop Music 24/7</div>
+                                        <div class="text-xs text-gray-400">Automatically replay playlist.</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="stream_loopMusic" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-500"></div>
+                                    </label>
+                                </div>
+                                <button onclick="saveStreamSettings()" class="w-full bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 border border-teal-500/20 py-2 rounded-xl text-sm font-bold mt-2 transition">
+                                    Save Settings
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Userbot Configuration -->
+                        <div class="glass-card p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+                            <div class="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 blur-2xl rounded-full"></div>
+                            <h3 class="font-bold mb-4 flex items-center gap-2 relative z-10">
+                                <i class="fas fa-id-badge text-blue-400"></i> Stream Assistant (Userbot)
+                            </h3>
+                            
+                            <div id="userbot-status-disconnected" class="relative z-10">
+                                <div class="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-300 mb-4">
+                                    <i class="fas fa-exclamation-triangle"></i> Telegram Bots cannot start Voice Chats. You MUST connect a Userbot (Assistant Account).
+                                </div>
+                                <div class="space-y-3">
+                                    <input type="text" id="ub-api-id" placeholder="API ID (e.g. 1234567)" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
+                                    <input type="text" id="ub-api-hash" placeholder="API HASH" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
+                                    <input type="text" id="ub-phone" placeholder="Phone Number (e.g. +8801...)" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
+                                    <button onclick="requestUserbotCode()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-[0_0_10px_rgba(37,99,235,0.3)]">
+                                        Send Login Code
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- OTP Step -->
+                            <div id="userbot-status-otp" class="relative z-10 hidden">
+                                <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300 mb-4">
+                                    <i class="fas fa-info-circle"></i> We sent an OTP to your Telegram account.
+                                </div>
+                                <div class="space-y-3">
+                                    <input type="text" id="ub-otp" placeholder="Enter OTP (e.g. 12345)" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
+                                    <button onclick="submitUserbotCode()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-xl transition-all shadow-[0_0_10px_rgba(22,163,74,0.3)]">
+                                        Verify & Connect
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Connected Step -->
+                            <div id="userbot-status-connected" class="relative z-10 hidden">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 rounded-full bg-green-900 flex items-center justify-center border-2 border-green-500">
+                                        <i class="fas fa-user-astronaut text-xl text-green-300"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-sm">Assistant Connected</div>
+                                        <div class="text-xs text-green-400 flex items-center gap-1">
+                                            <i class="fas fa-check-circle"></i> Ready to Stream
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onclick="disconnectUserbot()" class="w-full mt-4 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/20 font-bold py-2 rounded-xl transition-all text-sm">
+                                    Disconnect Assistant
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="page-serverlogs" class="page">
                 <div class="flex justify-between items-center mb-6">
                     <div>
@@ -5645,6 +5912,55 @@
                             </div>
                         </div>
 
+                        <!-- Live Stream & Post Assistant -->
+                        <div class="glass-card p-4 md:p-6 rounded-2xl border border-blue-500/20">
+                            <h4 class="font-bold mb-4 flex items-center gap-2 text-blue-400">
+                                <i class="fas fa-satellite-dish animate-pulse"></i> Live Stream & Post Assistant
+                            </h4>
+                            <div class="space-y-4">
+                                <!-- Auto Join Live Stream -->
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <div>
+                                        <div class="text-sm font-bold text-gray-200">
+                                            Live Stream Auto-Join Assistant
+                                        </div>
+                                        <div class="text-[10px] text-gray-500">Auto-join/pin status during live streams</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_autoJoinLiveStream" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                    </label>
+                                </div>
+
+                                <!-- Live Stream Start Alerts -->
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <div>
+                                        <div class="text-sm font-bold text-gray-200">
+                                            Live Stream User Alerts
+                                        </div>
+                                        <div class="text-[10px] text-gray-400">Broadcast notifications to users when live starts. Disable to run private/silent streams.</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_enableLiveStreamAlerts" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
+                                    </label>
+                                </div>
+
+                                <!-- Auto Channel Reaction -->
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
+                                    <div>
+                                        <div class="text-sm font-bold text-gray-200">
+                                            Channel Post Auto Reaction
+                                        </div>
+                                        <div class="text-[10px] text-gray-500">Auto-react to new channel posts</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_autoChannelReaction" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
                         <!-- Info Box -->
                         <div class="glass-card p-4 rounded-2xl border border-blue-500/20">
                             <div class="flex items-start gap-3">
@@ -5660,6 +5976,43 @@
 
                     <!-- RIGHT COLUMN -->
                     <div class="space-y-4">
+                        
+                        <!-- Access Control -->
+                        <div class="glass-card p-4 md:p-6 rounded-2xl">
+                            <h4 class="font-bold mb-4 flex items-center gap-2">
+                                <i class="fas fa-users-cog text-cyan-400"></i> Access Control
+                            </h4>
+                            <div class="space-y-2 mb-4">
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg">
+                                    <div>
+                                        <div class="text-sm">Auto-Unmute New Users</div>
+                                        <div class="text-xs text-gray-400">Automatically unmute users 1 minute after joining.</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_autoUnmuteNewUsers" class="sr-only peer" checked>
+                                        <div
+                                            class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500">
+                                        </div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg">
+                                    <div>
+                                        <div class="text-sm">Global Chat Unlocked</div>
+                                        <div class="text-xs text-gray-400">If ON, all users can talk. If OFF, chat is muted (locked) for everyone except admins.</div>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_globalChatUnlocked" class="sr-only peer" checked>
+                                        <div
+                                            class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500">
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            <button onclick="applyGlobalChatLock()" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-xl transition-all">
+                                Apply Global Chat Lock Status Now
+                            </button>
+                        </div>
+
                         <!-- Anti-Spam -->
                         <div class="glass-card p-4 md:p-6 rounded-2xl">
                             <h4 class="font-bold mb-4 flex items-center gap-2">
@@ -5770,56 +6123,6 @@
                                     class="w-full bg-orange-500/20 text-orange-400 border border-orange-500/30 py-3 rounded-xl font-bold text-sm hover:bg-orange-500/30 transition-all">
                                     UPDATE CHANNEL
                                 </button>
-                            </div>
-                        </div>
-
-                        <!-- Live Stream & Post Assistant -->
-                        <div class="glass-card p-4 md:p-6 rounded-2xl border border-blue-500/20">
-                            <h4 class="font-bold mb-4 flex items-center gap-2 text-blue-400">
-                                <i class="fas fa-satellite-dish animate-pulse"></i> Live Stream & Post Assistant
-                            </h4>
-                            <div class="space-y-4">
-                                <!-- Auto Join Live Stream -->
-                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
-                                    <div>
-                                        <div class="text-sm font-bold text-gray-200">
-                                            Live Stream Auto-Join Assistant
-                                        </div>
-                                        <div class="text-[10px] text-gray-500">Auto-join/pin status during live streams</div>
-                                    </div>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" id="gm_autoJoinLiveStream" class="sr-only peer">
-                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
-                                    </label>
-                                </div>
-
-                                <!-- Live Stream Start Alerts -->
-                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
-                                    <div>
-                                        <div class="text-sm font-bold text-gray-200">
-                                            Live Stream User Alerts
-                                        </div>
-                                        <div class="text-[10px] text-gray-400">Broadcast notifications to users when live starts. Disable to run private/silent streams.</div>
-                                    </div>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" id="gm_enableLiveStreamAlerts" class="sr-only peer">
-                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
-                                    </label>
-                                </div>
-
-                                <!-- Auto Channel Reaction -->
-                                <div class="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-white/5">
-                                    <div>
-                                        <div class="text-sm font-bold text-gray-200">
-                                            Channel Post Auto Reaction
-                                        </div>
-                                        <div class="text-[10px] text-gray-500">Auto-react to new channel posts</div>
-                                    </div>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" id="gm_autoChannelReaction" class="sr-only peer">
-                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
-                                    </label>
-                                </div>
                             </div>
                         </div>
 
@@ -14636,6 +14939,8 @@
                     document.getElementById('gm_deleteVideoChatEnded').checked =
                         s.deleteVideoChatEnded === true;
                     // Anti-spam settings
+                    document.getElementById('gm_autoUnmuteNewUsers').checked = s.autoUnmuteNewUsers !== false;
+                    document.getElementById('gm_globalChatUnlocked').checked = s.globalChatUnlocked !== false;
                     document.getElementById('gm_deleteUserLinks').checked = s.deleteUserLinks === true;
                     document.getElementById('gm_deleteMentionsHashtags').checked = s.deleteMentionsHashtags === true;
                     document.getElementById('gm_deleteDmSolicitations').checked = s.deleteDmSolicitations === true;
@@ -14679,11 +14984,34 @@
             }
         }
 
+        
+        async function applyGlobalChatLock() {
+            const unlock = document.getElementById('gm_globalChatUnlocked').checked;
+            try {
+                const res = await fetch('/api/admin/group-management/lock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ unlock })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('✅ ' + data.message);
+                    saveGroupManagementSettings();
+                } else {
+                    showToast('❌ Failed: ' + data.message);
+                }
+            } catch (err) {
+                showToast('❌ Error applying lock: ' + err.message);
+            }
+        }
+
         async function saveGroupManagementSettings() {
             const statusEl = document.getElementById('groupManagementStatus');
             if (statusEl) statusEl.textContent = 'Saving...';
 
             const settings = {
+                autoUnmuteNewUsers: document.getElementById('gm_autoUnmuteNewUsers')?.checked !== false,
+                globalChatUnlocked: document.getElementById('gm_globalChatUnlocked')?.checked !== false,
                 autoDeleteSystemMessages: document.getElementById('gm_autoDeleteSystemMessages')?.checked || false,
                 welcomeMessage: document.getElementById('gm_welcomeMessage')?.checked || false,
                 welcomeMessageText: document.getElementById('gm_welcomeMessageText')?.value || "",
@@ -17469,6 +17797,67 @@
             };
         });
     </script>
+<script>
+    let analystChartInstance = null;
+    function initAnalystChart() {
+        const ctx = document.getElementById('liveAnalystChart');
+        if (!ctx) return;
+        
+        if (analystChartInstance) analystChartInstance.destroy();
+        
+        // Mock data for last 7 days
+        const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const data = [120, 190, 300, 500, 450, 600, 850];
+        
+        analystChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'New Users',
+                    data: data,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+    }
+    
+    function updateAnalystChart() {
+        if (!analystChartInstance) return;
+        // Generate random new data to simulate refresh
+        const newData = Array.from({length: 7}, () => Math.floor(Math.random() * 1000) + 100);
+        analystChartInstance.data.datasets[0].data = newData;
+        analystChartInstance.update();
+        showToast('Analyst chart data refreshed.');
+    }
+
+    // Call init on load
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(initAnalystChart, 1000);
+    });
+</script>
 </body>
 
 </html>

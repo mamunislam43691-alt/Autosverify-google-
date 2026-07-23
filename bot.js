@@ -128,11 +128,11 @@ async function sendBackupBotMenu(chatId) {
     const dbSize = fs.existsSync(dbPath) ? (fs.statSync(dbPath).size / 1024).toFixed(2) : '0';
     const userCount = Object.keys(db.data?.users || {}).length;
 
-    const msgText = `🛡️ **Backup & Database Management Panel**\n\n` +
-        `👤 **Master Admin ID:** \`${getAdminId()}\`\n` +
-        `👥 **Total Users:** ${userCount}\n` +
-        `📁 **DB File Size:** ${dbSize} KB\n\n` +
-        `Select an action below or upload a \`.json\` database file directly to restore:`;
+    const msgText = `🛡️ <b>Backup & Database Management Panel</b>\n\n` +
+        `👤 <b>Master Admin ID:</b> <code>${getAdminId()}</code>\n` +
+        `👥 <b>Total Users:</b> ${userCount}\n` +
+        `📁 <b>DB File Size:</b> ${dbSize} KB\n\n` +
+        `Select an action below or upload a .json database file directly to restore:`;
 
     const keyboard = {
         inline_keyboard: [
@@ -142,7 +142,9 @@ async function sendBackupBotMenu(chatId) {
         ]
     };
 
-    await backupBotInstance.sendMessage(chatId, msgText, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+    await backupBotInstance.sendMessage(chatId, msgText, { parse_mode: 'HTML', reply_markup: keyboard }).catch(e => {
+        console.error('Error sending backup bot menu:', e);
+    });
 }
 
 async function initBackupBot() {
@@ -178,7 +180,7 @@ async function initBackupBot() {
                 const userId = msg.from ? msg.from.id : chatId;
 
                 if (!isAdmin(userId)) {
-                    await backupBotInstance.sendMessage(chatId, `⚠️ **Access Denied**\n\nThis Backup & Database Management Bot is strictly reserved for Administrator ID: \`${getAdminId() || 'Not Configured'}\`.\n\nYour User ID: \`${userId}\``, { parse_mode: 'Markdown' }).catch(() => {});
+                    await backupBotInstance.sendMessage(chatId, `⚠️ <b>Access Denied</b>\n\nThis Backup & Database Management Bot is strictly reserved for Administrator ID: <code>${getAdminId() || 'Not Configured'}</code>.\n\nYour User ID: <code>${userId}</code>`, { parse_mode: 'HTML' }).catch(() => {});
                     return;
                 }
 
@@ -447,6 +449,7 @@ async function reloadBotInstance() {
         }
 
         bot = new TelegramBot(finalToken, botOptions);
+        global.botInstance = bot;
 
         // Inject bot into web server early
         try {
@@ -849,6 +852,13 @@ const unmutedUsersTracker = new Map(); // "chatId_userId" -> boolean
 
 async function scheduleAutoUnmute(chatId, user) {
     if (!user || user.is_bot) return;
+    
+    const settings = db.data?.adminSettings?.groupManagement || {};
+    if (settings.autoUnmuteNewUsers === false) {
+        console.log(`[AUTO-UNMUTE] Disabled in settings, skipping for user ${user.id}`);
+        return;
+    }
+
     const key = `${chatId}_${user.id}`;
     if (unmutedUsersTracker.get(key)) return; // Only unmute once to respect manual admin mute afterwards
     
@@ -882,19 +892,9 @@ async function scheduleAutoUnmute(chatId, user) {
                     can_pin_messages: false
                 }
             });
-
             console.log(`[AUTO-UNMUTE] Successfully unrestricted/unmuted ${user.first_name || 'User'} (${user.id}) in chat ${chatId}`);
-
-            // Send polite notification in English only
-            const noticeText = `🎙️ **Auto-Unmute Activated**\n\nNew participant **${user.first_name || 'User'}** has been granted permission to talk. (Auto-unmuted after 1 minute) 😊`;
-            const noticeMsg = await bot.sendMessage(chatId, noticeText, { parse_mode: 'Markdown' }).catch(() => {});
             
-            if (noticeMsg) {
-                // Auto delete notice to keep group chat tidy
-                setTimeout(() => {
-                    bot.deleteMessage(chatId, noticeMsg.message_id).catch(() => {});
-                }, 20000);
-            }
+            // Removed the notification SMS based on user request.
         } catch (err) {
             console.error(`[AUTO-UNMUTE] Failed to unmute user ${user.id} in chat ${chatId}:`, err.message);
         }
@@ -3521,6 +3521,17 @@ bot.on('callback_query', async (query) => {
         if (data === 'main_menu') {
             bot.deleteMessage(chatId, msgId).catch(() => { });
             sendMainMenu(chatId, user);
+        }
+        else if (data === 'support') {
+            const supportLink = db.data?.apiKeys?.supportLink || db.data?.adminSettings?.supportUsername || db.data?.settings?.supportUsername || 'https://t.me/support';
+            const finalLink = supportLink.includes('http') ? supportLink : `https://t.me/${supportLink.replace('@', '')}`;
+            bot.sendMessage(chatId, `📞 **Contact Support**\n\nPlease contact our support team by clicking the button below:`, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[ { text: '💬 Message Support', url: finalLink } ]]
+                }
+            }).catch(() => {});
+            bot.answerCallbackQuery(query.id).catch(() => {});
         }
 
         // ==================== ADMIN PANEL ====================
