@@ -9644,39 +9644,39 @@
                         return;
                     }
                     const map = {
-                        'dash-total-users': data.totalUsers,
-                        'dash-active': data.activeToday,
-                        'dash-total-tokens': data.totalTokens,
-                        'dash-total-gems': data.totalGems,
-                        'dash-total-usdt': data.totalUsdt,
-                        'dash-verified': data.verifiedUsers,
-                        'dash-shop-items': data.shopItems,
-                        'dash-accounts': data.accounts,
-                        'dash-gmails': data.gmailsUsed,
-                        'dash-vpns': data.totalVpns,
-                        'dash-cards': data.totalCards,
-                        'dash-apikeys': data.apiKeys || 0,
+                        'dash-total-users': data.totalUsers ?? 0,
+                        'dash-active': data.activeToday ?? 0,
+                        'dash-total-tokens': data.totalTokens ?? 0,
+                        'dash-total-gems': data.totalGems ?? 0,
+                        'dash-total-usdt': data.totalUsdt ?? 0,
+                        'dash-verified': data.verifiedUsers ?? 0,
+                        'dash-shop-items': data.shopItems ?? 0,
+                        'dash-accounts': data.accounts ?? 0,
+                        'dash-gmails': data.gmailsUsed ?? 0,
+                        'dash-vpns': data.totalVpns ?? 0,
+                        'dash-cards': data.totalCards ?? 0,
+                        'dash-apikeys': data.apiKeys ?? 0,
                         // New stats
-                        'dash-deposits': data.totalDeposits,
-                        'dash-withdrawals': data.totalWithdrawals,
-                        'dash-pending': data.pendingDeposits,
-                        'dash-revenue': data.revenue,
-                        'dash-services': data.serviceCategories || 0,
-                        'dash-total-stock': data.totalServiceStock || 0,
+                        'dash-deposits': data.totalDeposits ?? 0,
+                        'dash-withdrawals': data.totalWithdrawals ?? 0,
+                        'dash-pending': data.pendingDeposits ?? 0,
+                        'dash-revenue': data.revenue ?? 0,
+                        'dash-services': data.serviceCategories ?? 0,
+                        'dash-total-stock': data.totalServiceStock ?? 0,
                         'dash-backup-time': data.lastBackup || 'Never',
 
                         // Newly added dashboard cards
-                        'dash-smm-orders': data.smmOrdersCount,
-                        'dash-tg-groups': data.telegramGroupsCount,
-                        'dash-promo-codes': data.promoCodesCount,
-                        'dash-tasks': data.tasksCount,
-                        'dash-ad-networks': data.adNetworksCount,
+                        'dash-smm-orders': data.smmOrdersCount ?? 0,
+                        'dash-tg-groups': data.telegramGroupsCount ?? 0,
+                        'dash-promo-codes': data.promoCodesCount ?? 0,
+                        'dash-tasks': data.tasksCount ?? 0,
+                        'dash-ad-networks': data.adNetworksCount ?? 0,
 
                         // Monitoring Cards
                         'dash-gmails-monitor': (data.gmails?.used || 0) + '/' + (data.gmails?.total || 0),
-                        'dash-apikeys-monitor': data.api?.activeKeys || 0,
-                        'dash-api-calls': data.api?.totalCalls || 0,
-                        'dash-api-users': data.api?.activeUsers || 0
+                        'dash-apikeys-monitor': data.api?.activeKeys ?? 0,
+                        'dash-api-calls': data.api?.totalCalls ?? 0,
+                        'dash-api-users': data.api?.activeUsers ?? 0
                     };
 
                     // Specific formatting for Gmail bar
@@ -9692,10 +9692,14 @@
                         const el = document.getElementById(id);
                         if (el) {
                             let formatted = '0';
-                            if (typeof val === 'number') {
-                                formatted = formatCompact(val);
-                            } else {
-                                formatted = val || '0';
+                            try {
+                                if (typeof val === 'number') {
+                                    formatted = formatCompact(val);
+                                } else {
+                                    formatted = val !== undefined && val !== null ? String(val) : '0';
+                                }
+                            } catch (e) {
+                                formatted = String(val ?? '0');
                             }
                             if (id === 'dash-revenue') {
                                 el.textContent = '$' + formatted;
@@ -9724,14 +9728,16 @@
                     const growthEl = document.getElementById('dash-users-growth');
                     if (growthEl && data.userGrowth !== undefined) {
                         growthEl.textContent = (data.userGrowth > 0 ? '+' : '') + data.userGrowth + '%';
-                        growthEl.parentElement.className = data.userGrowth >= 0 ?
-                            'text-xs text-green-400' : 'text-xs text-red-400';
+                        if (growthEl.parentElement) {
+                            growthEl.parentElement.className = data.userGrowth >= 0 ?
+                                'text-xs text-green-400' : 'text-xs text-red-400';
+                        }
                     }
                 }).catch(err => {
                     console.error('[Stats] Failed to load admin stats:', err.message);
                     // Show 0 instead of ... on error
                     document.querySelectorAll('[id^="dash-"]').forEach(el => {
-                        if (el.textContent === '...') el.textContent = '0';
+                        if (el.textContent === '...' || !el.textContent.trim()) el.textContent = '0';
                     });
                 });
         }

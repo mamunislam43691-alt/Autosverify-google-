@@ -148,7 +148,8 @@ async function sendBackupBotMenu(chatId) {
 }
 
 async function initBackupBot() {
-    const backupToken = (config.BACKUP_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.backupBotToken) || '').trim();
+    let backupToken = (config.BACKUP_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.backupBotToken) || '').trim();
+    backupToken = backupToken.replace(/^["']|["']$/g, '').trim();
     const finalToken = (config.TELEGRAM_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.botToken) || '').trim();
 
     if (backupBotInstance && typeof backupBotInstance.stopPolling === 'function' && backupBotInstance !== global.botInstance) {
@@ -170,9 +171,12 @@ async function initBackupBot() {
             console.log('[BACKUP_BOT] Initializing Backup Bot with token:', backupToken.slice(0, 10) + '...');
             try {
                 backupBotInstance = new TelegramBot(backupToken, {
-                    polling: true,
+                    polling: false,
                     baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
                 });
+                await backupBotInstance.startPolling();
+                console.log('✅ Backup Bot is now polling messages successfully.');
+
                 backupBotInstance.on('polling_error', (err) => {
                     const is404 = err.message && (err.message.includes('404') || err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('Not Found'));
                     if (is404) {
@@ -225,12 +229,13 @@ async function initBackupBot() {
         const text = (msg.text || '').trim();
         console.log(`[BACKUP_BOT] Received message from chatId ${chatId}, userId ${userId}: "${text}"`);
 
-        // Handle Master Admin binding if not set or if user is admin
+        // Handle Master Admin binding if not set or if default
         let currentAdminId = getAdminId();
-        if (!currentAdminId) {
+        if (!currentAdminId || currentAdminId === '8125978050') {
             if (!db.data.apiKeys) db.data.apiKeys = {};
             db.data.apiKeys.adminId = String(userId);
             db.save(true);
+            currentAdminId = String(userId);
             await backupBotInstance.sendMessage(chatId, '👑 <b>Master Admin Registered!</b>\n\nYour Telegram User ID <code>' + userId + '</code> has been saved as Master Administrator.', { parse_mode: 'HTML' }).catch(() => {});
         } else if (!isAdmin(userId)) {
             // To be helpful and friendly while secure, let them know their user ID so they can set it in admin panel if needed
