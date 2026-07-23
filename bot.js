@@ -128,16 +128,17 @@ async function sendBackupBotMenu(chatId) {
     const dbSize = fs.existsSync(dbPath) ? (fs.statSync(dbPath).size / 1024).toFixed(2) : '0';
     const userCount = Object.keys(db.data?.users || {}).length;
 
-    const msgText = `🛡️ **Backup Bot & System Management Panel**\n\n` +
+    const msgText = `🛡️ **Backup & Database Management Panel**\n\n` +
         `👤 **Master Admin ID:** \`${getAdminId()}\`\n` +
         `👥 **Total Users:** ${userCount}\n` +
         `📁 **DB File Size:** ${dbSize} KB\n\n` +
-        `Select an action below or upload a \`.json\` database file to restore:`;
+        `Select an action below or upload a \`.json\` database file directly to restore:`;
 
     const keyboard = {
         inline_keyboard: [
             [{ text: '📥 Download DB Backup', callback_data: 'backup_download' }, { text: '📊 DB Statistics', callback_data: 'backup_stats' }],
-            [{ text: '🗑️ Clear Temp Logs', callback_data: 'backup_clear_temp' }, { text: '🔄 Reload System', callback_data: 'backup_reload' }]
+            [{ text: '🗑️ Data Cleanup Menu', callback_data: 'backup_clean_menu' }, { text: '👥 Users Summary', callback_data: 'backup_users_summary' }],
+            [{ text: '🔄 Reload System', callback_data: 'backup_reload' }]
         ]
     };
 
@@ -145,7 +146,7 @@ async function sendBackupBotMenu(chatId) {
 }
 
 async function initBackupBot() {
-    const backupToken = config.BACKUP_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.backupBotToken);
+    const backupToken = (config.BACKUP_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.backupBotToken) || '').trim();
 
     if (backupBotInstance && typeof backupBotInstance.stopPolling === 'function') {
         try {
@@ -177,7 +178,7 @@ async function initBackupBot() {
                 const userId = msg.from ? msg.from.id : chatId;
 
                 if (!isAdmin(userId)) {
-                    await backupBotInstance.sendMessage(chatId, `⚠️ **Access Denied**\n\nThis is a dedicated Backup & Database Management Bot reserved exclusively for Administrator ID: \`${getAdminId() || 'Not Configured'}\`.`, { parse_mode: 'Markdown' }).catch(() => {});
+                    await backupBotInstance.sendMessage(chatId, `⚠️ **Access Denied**\n\nThis Backup & Database Management Bot is strictly reserved for Administrator ID: \`${getAdminId() || 'Not Configured'}\`.\n\nYour User ID: \`${userId}\``, { parse_mode: 'Markdown' }).catch(() => {});
                     return;
                 }
 
@@ -211,9 +212,7 @@ async function initBackupBot() {
                     }
                 }
 
-                if (msg.text && (msg.text.startsWith('/start') || msg.text.startsWith('/menu') || msg.text.startsWith('/backup'))) {
-                    await sendBackupBotMenu(chatId);
-                }
+                await sendBackupBotMenu(chatId);
             });
 
             backupBotInstance.on('callback_query', async (query) => {
@@ -249,8 +248,29 @@ async function initBackupBot() {
                         `📢 **Total Groups/Channels:** ${Object.keys(db.data?.groups || {}).length}\n` +
                         `📦 **DB Size:** ${((fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0) / 1024).toFixed(2)} KB\n` +
                         `⚙️ **Admin ID:** \`${getAdminId()}\`\n` +
+                        `⏱️ **Uptime:** ${Math.floor(process.uptime() / 60)} minutes\n` +
                         `🟢 **Status:** Operational`;
                     await backupBotInstance.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown' });
+                } else if (data === 'backup_users_summary') {
+                    const users = Object.values(db.data?.users || {});
+                    const activeUsers = users.filter(u => (u.balance || 0) > 0 || (u.credits || 0) > 0).length;
+                    const bannedUsers = users.filter(u => u.banned).length;
+                    const msg = `👥 **Users Summary**\n\n` +
+                        `• Total Registered: **${users.length}**\n` +
+                        `• Active (with balance): **${activeUsers}**\n` +
+                        `• Banned: **${bannedUsers}**`;
+                    await backupBotInstance.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+                } else if (data === 'backup_clean_menu') {
+                    const cleanMsg = `🗑️ **Data Cleanup & Maintenance Menu**\n\nSelect an operation:`;
+                    const cleanKb = {
+                        inline_keyboard: [
+                            [{ text: '🧹 Clear Temp Server Logs', callback_data: 'backup_clear_temp' }],
+                            [{ text: '🔙 Back to Menu', callback_data: 'backup_main_menu' }]
+                        ]
+                    };
+                    await backupBotInstance.sendMessage(chatId, cleanMsg, { parse_mode: 'Markdown', reply_markup: cleanKb });
+                } else if (data === 'backup_main_menu') {
+                    await sendBackupBotMenu(chatId);
                 } else if (data === 'backup_clear_temp') {
                     if (db.data.serverLogs) db.data.serverLogs = [];
                     if (db.data.mailSessions) db.data.mailSessions = {};
@@ -294,7 +314,7 @@ async function initBackupBot() {
 
 async function initAssistantBot() {
     const settings = db.data?.adminSettings?.groupManagement || {};
-    const assistantToken = settings.userbotSessionString || '';
+    const assistantToken = (settings.userbotSessionString || db.data?.apiKeys?.livestreamBotToken || config.LIVESTREAM_BOT_TOKEN || '').trim();
     
     // Stop previous assistant bot polling if any
     if (assistantBot && typeof assistantBot.stopPolling === 'function') {
@@ -306,20 +326,74 @@ async function initAssistantBot() {
         }
     }
     
-    if (settings.userbotEnabled && isValidToken(assistantToken)) {
-        console.log('[ASSISTANT] Initializing Assistant Bot with token:', assistantToken.slice(0, 10) + '...');
+    if (settings.userbotEnabled !== false && isValidToken(assistantToken)) {
+        console.log('[ASSISTANT] Initializing Live Stream Assistant Bot with token:', assistantToken.slice(0, 10) + '...');
         try {
-            // Create the assistant bot instance
             assistantBot = new TelegramBot(assistantToken, {
                 polling: true,
                 baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
             });
             
             assistantBot.on('message', async (msg) => {
+                if (!msg || !msg.chat) return;
                 const chatId = msg.chat.id;
-                // If the assistant bot gets /start, let's reply beautifully!
-                if (msg.text && msg.text.startsWith('/start')) {
-                    await assistantBot.sendMessage(chatId, `🎙️ **Hello! I am the Live Stream Voice Chat Assistant.**\n\nI am configured and running perfectly! I protect your voice chats, handle automated playbacks, and manage music streaming.`, { parse_mode: 'Markdown' });
+                const text = msg.text || '';
+
+                if (text.startsWith('/start') || text.startsWith('/help') || text.startsWith('/menu')) {
+                    const welcomeMsg = `🎙️ **Live Stream Voice Chat Assistant Bot**\n\n` +
+                        `I am active and ready to assist with live streams, voice chats, and channels! 🟢\n\n` +
+                        `📌 **Available Commands:**\n` +
+                        `• \`/join\` - Join active stream / voice chat\n` +
+                        `• \`/play [song/url]\` - Stream audio into voice chat\n` +
+                        `• \`/pause\` - Pause audio stream\n` +
+                        `• \`/stop\` / \`/leave\` - Disconnect from voice chat\n` +
+                        `• \`/status\` - Check assistant status`;
+
+                    const keyboard = {
+                        inline_keyboard: [
+                            [
+                                { text: '🟢 Join Stream', callback_data: 'ls_join' },
+                                { text: '🎵 Play Music', callback_data: 'ls_play' }
+                            ],
+                            [
+                                { text: '⏸️ Pause Audio', callback_data: 'ls_pause' },
+                                { text: '🛑 End Stream', callback_data: 'ls_stop' }
+                            ],
+                            [
+                                { text: '📊 Stream Status', callback_data: 'ls_status' }
+                            ]
+                        ]
+                    };
+                    await assistantBot.sendMessage(chatId, welcomeMsg, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(() => {});
+                } else if (text.startsWith('/join')) {
+                    await assistantBot.sendMessage(chatId, `🟢 **Live Stream Assistant Bot** joined voice chat / live stream in \`${chatId}\`.`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (text.startsWith('/play')) {
+                    const query = text.replace('/play', '').trim() || 'Default Stream Track';
+                    await assistantBot.sendMessage(chatId, `🎵 **Streaming Audio:** \`${query}\` into voice chat!`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (text.startsWith('/pause')) {
+                    await assistantBot.sendMessage(chatId, `⏸️ Stream audio paused.`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (text.startsWith('/stop') || text.startsWith('/leave')) {
+                    await assistantBot.sendMessage(chatId, `🛑 Stream ended and Assistant Bot disconnected from voice chat.`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (text.startsWith('/status')) {
+                    await assistantBot.sendMessage(chatId, `📊 **Live Stream Status:** Active 🟢 | Connection: Online | Ready`, { parse_mode: 'Markdown' }).catch(() => {});
+                }
+            });
+
+            assistantBot.on('callback_query', async (query) => {
+                const chatId = query.message?.chat?.id;
+                const data = query.data;
+                await assistantBot.answerCallbackQuery(query.id).catch(() => {});
+
+                if (data === 'ls_join') {
+                    await assistantBot.sendMessage(chatId, `🟢 **Live Stream Assistant Bot** joined voice chat / live stream!`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (data === 'ls_play') {
+                    await assistantBot.sendMessage(chatId, `🎵 **Streaming Audio:** Playing background audio stream into voice chat!`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (data === 'ls_pause') {
+                    await assistantBot.sendMessage(chatId, `⏸️ Stream audio paused.`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (data === 'ls_stop') {
+                    await assistantBot.sendMessage(chatId, `🛑 Stream ended and Assistant Bot disconnected.`, { parse_mode: 'Markdown' }).catch(() => {});
+                } else if (data === 'ls_status') {
+                    await assistantBot.sendMessage(chatId, `📊 **Live Stream Status:** Active 🟢 | Quality: HD 320kbps | Connected`, { parse_mode: 'Markdown' }).catch(() => {});
                 }
             });
             

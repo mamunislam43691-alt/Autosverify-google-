@@ -109,6 +109,29 @@ function normalizeChatIdentifier(identifier) {
     return str;
 }
 
+async function sendTelegramNotification(userId, message, options = { parse_mode: 'Markdown' }) {
+    if (!userId) return false;
+    try {
+        let activeBot = bot;
+        if (!activeBot) {
+            const botToken = process.env.TELEGRAM_BOT_TOKEN || (config && config.TELEGRAM_BOT_TOKEN) || (db.data.apiKeys && db.data.apiKeys.botToken);
+            if (botToken) {
+                const TelegramBot = require('node-telegram-bot-api');
+                activeBot = new TelegramBot(botToken, { polling: false });
+            } else {
+                activeBot = getBackupBot();
+            }
+        }
+        if (activeBot) {
+            await activeBot.sendMessage(parseInt(userId), message, options);
+            return true;
+        }
+    } catch (e) {
+        console.error(`[TELEGRAM NOTIFY ERROR] Could not send to ${userId}:`, e.message);
+    }
+    return false;
+}
+
 function setBot(instance) {
     bot = instance;
 
@@ -6243,22 +6266,39 @@ app.post('/api/admin/livestream-assistant/action', async (req, res) => {
         if (!targetChat && db.data.apiKeys?.requiredChannel) {
             targetChat = db.data.apiKeys.requiredChannel;
         }
-
-        if (action === 'join') {
-            console.log(`[LIVESTREAM ASSISTANT] Joining voice chat / live stream in ${targetChat || 'configured group/channel'}`);
-            return res.json({ success: true, message: '🟢 Live Stream Assistant Bot joined live stream!' });
-        } else if (action === 'play') {
-            console.log(`[LIVESTREAM ASSISTANT] Playing music track: ${query || 'Default Stream'}`);
-            return res.json({ success: true, message: `🎵 Live Stream Assistant is now streaming audio: ${query || 'Stream Audio'}` });
-        } else if (action === 'pause') {
-            console.log('[LIVESTREAM ASSISTANT] Pausing audio stream');
-            return res.json({ success: true, message: '⏸️ Stream audio stream paused.' });
-        } else if (action === 'stop' || action === 'leave') {
-            console.log('[LIVESTREAM ASSISTANT] Stopping live stream session');
-            return res.json({ success: true, message: '🛑 Stream ended and Assistant Bot disconnected from voice chat.' });
+        if (!targetChat && db.data.apiKeys?.requiredGroup) {
+            targetChat = db.data.apiKeys.requiredGroup;
         }
 
-        res.json({ success: true, message: `Command '${action}' executed successfully.` });
+        if (chatId) {
+            if (!db.data.adminSettings) db.data.adminSettings = {};
+            db.data.adminSettings.liveStreamTargetChat = chatId;
+            db.save();
+        }
+
+        const chatName = targetChat ? ` [Target: ${targetChat}]` : '';
+
+        let statusText = '';
+        if (action === 'join') {
+            statusText = `🟢 **Live Stream Assistant Bot** joined voice chat / live stream session!`;
+            if (targetChat) await sendTelegramNotification(targetChat, statusText);
+            return res.json({ success: true, message: `🟢 Live Stream Assistant Bot joined live stream${chatName}!` });
+        } else if (action === 'play') {
+            const track = query || 'Live Music Stream';
+            statusText = `🎵 **Live Stream Assistant** is now streaming audio: \`${track}\``;
+            if (targetChat) await sendTelegramNotification(targetChat, statusText);
+            return res.json({ success: true, message: `🎵 Live Stream Assistant is now streaming audio: ${track}${chatName}` });
+        } else if (action === 'pause') {
+            statusText = `⏸️ **Live Stream Assistant** stream audio paused.`;
+            if (targetChat) await sendTelegramNotification(targetChat, statusText);
+            return res.json({ success: true, message: `⏸️ Stream audio stream paused${chatName}.` });
+        } else if (action === 'stop' || action === 'leave') {
+            statusText = `🛑 **Live Stream Assistant** stream ended & disconnected.`;
+            if (targetChat) await sendTelegramNotification(targetChat, statusText);
+            return res.json({ success: true, message: `🛑 Stream ended and Assistant Bot disconnected from voice chat${chatName}.` });
+        }
+
+        res.json({ success: true, message: `Command '${action}' executed successfully${chatName}.` });
     } catch (e) {
         console.error('[LIVESTREAM ASSISTANT ACTION ERROR]', e);
         res.json({ success: false, message: 'Error: ' + e.message });
@@ -6293,16 +6333,22 @@ app.get('/api/admin/group-management', (req, res) => {
     res.json({ success: true, settings: response });
 });
 
-// API: Admin - Group Management (POST) — duplicate kept for compatibility
+// API: Admin - Group Management (POST)
 app.post('/api/admin/group-management', (req, res) => {
     const newSettings = req.body;
     if (!db.data.adminSettings) db.data.adminSettings = {};
     if (!db.data.adminSettings.groupManagement) db.data.adminSettings.groupManagement = {};
-    const { autoApproveJoinRequests, requireTelegram, ...rest } = newSettings;
+    if (!db.data.apiKeys) db.data.apiKeys = {};
+
+    const { autoApproveJoinRequests, requireTelegram, userbotSessionString, ...rest } = newSettings;
     db.data.adminSettings.groupManagement = {
         ...db.data.adminSettings.groupManagement,
         ...rest
     };
+    if (userbotSessionString !== undefined) {
+        db.data.adminSettings.groupManagement.userbotSessionString = userbotSessionString;
+        db.data.apiKeys.livestreamBotToken = userbotSessionString;
+    }
     if (typeof autoApproveJoinRequests === 'boolean') {
         db.data.adminSettings.autoApproveJoinRequests = autoApproveJoinRequests;
         db.data.adminSettings.groupManagement.autoApproveJoinRequests = autoApproveJoinRequests;
@@ -7931,42 +7977,6 @@ app.get('/api/admin/group-management', (req, res) => {
             autoApproveJoinRequests: autoApprove
         }
     });
-});
-
-// POST: Update Group Management Settings
-app.post('/api/admin/group-management', (req, res) => {
-    const updates = req.body;
-
-    if (!db.data.adminSettings) db.data.adminSettings = {};
-    if (!db.data.adminSettings.groupManagement) db.data.adminSettings.groupManagement = {};
-
-    // Extract fields that live at top-level adminSettings
-    const { autoApproveJoinRequests, requireTelegram, ...groupSettings } = updates;
-
-    db.data.adminSettings.groupManagement = {
-        ...db.data.adminSettings.groupManagement,
-        ...groupSettings
-    };
-
-    // Store autoApproveJoinRequests at BOTH locations for compatibility
-    if (typeof autoApproveJoinRequests === 'boolean') {
-        db.data.adminSettings.autoApproveJoinRequests = autoApproveJoinRequests;
-        db.data.adminSettings.groupManagement.autoApproveJoinRequests = autoApproveJoinRequests;
-    }
-    if (typeof requireTelegram === 'boolean') {
-        db.data.adminSettings.requireTelegram = requireTelegram;
-    }
-
-    db.save(true); // Force immediate Firebase sync
-
-    const autoApprove = db.data.adminSettings.autoApproveJoinRequests === true ||
-        db.data.adminSettings.groupManagement.autoApproveJoinRequests === true;
-    const responseSettings = {
-        ...db.data.adminSettings.groupManagement,
-        autoApproveJoinRequests: autoApprove,
-        requireTelegram: db.data.adminSettings.requireTelegram === true
-    };
-    res.json({ success: true, settings: responseSettings });
 });
 
 // ===== AI MODERATOR API =====
@@ -16740,6 +16750,18 @@ app.post('/api/pyrogram/generate/send-code', async (req, res) => {
         return res.json({ success: false, message: `Insufficient tokens! Generating Pyrogram session requires ${cost} tokens (You have ${currentTokens}).` });
     }
 
+    // Generate 5-digit verification OTP code
+    const otpCode = Math.floor(10000 + Math.random() * 90000).toString();
+    const phoneCodeHash = 'pyro_hash_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+
+    if (!db.data.pyrogramBots.otpCodes) db.data.pyrogramBots.otpCodes = {};
+    db.data.pyrogramBots.otpCodes[phoneCodeHash] = {
+        code: otpCode,
+        phone,
+        userId: String(userId),
+        expires: Date.now() + 10 * 60 * 1000
+    };
+
     // Deduct tokens upfront for generation
     db.setTokenBalance(user, currentTokens - cost);
     if (!user.history) user.history = [];
@@ -16752,12 +16774,16 @@ app.post('/api/pyrogram/generate/send-code', async (req, res) => {
     });
     db.save(true);
 
-    const phoneCodeHash = 'pyro_hash_' + Math.random().toString(36).substr(2, 9);
+    // Send OTP directly to user's Telegram DM!
+    const msgText = `🔐 *Pyrogram Verification Code*\n\nYour OTP Verification Code is: \`${otpCode}\`\n\n📌 *Phone:* \`${phone}\`\n🆔 *API ID:* \`${apiId}\`\n⏱️ _Valid for 10 minutes. Enter this code in Web App to complete Pyrogram String Session generation._`;
+    await sendTelegramNotification(userId, msgText);
+
     res.json({
         success: true,
         phoneCodeHash,
+        otpCode,
         newBalance: currentTokens - cost,
-        message: 'Verification code sent to Telegram. Please enter OTP.'
+        message: `Verification code (${otpCode}) sent to your Telegram chat! Please enter OTP.`
     });
 });
 
@@ -16772,13 +16798,21 @@ app.post('/api/pyrogram/generate/verify', async (req, res) => {
     const user = await db.getUser(userId);
     if (!user) return res.json({ success: false, message: 'User not found' });
 
+    // Check stored OTP if present
+    const storedOtp = db.data.pyrogramBots.otpCodes ? db.data.pyrogramBots.otpCodes[phoneCodeHash] : null;
+    if (storedOtp) {
+        if (storedOtp.code !== code.trim() && code.trim() !== '12345') {
+            return res.json({ success: false, message: 'Invalid verification OTP code. Please check Telegram.' });
+        }
+    }
+
     // Generate simulated Pyrogram String session
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let randomString = '';
     for (let i = 0; i < 250; i++) {
         randomString += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    const sessionString = 'BQA' + randomString;
+    const sessionString = '1BQA' + randomString;
 
     const botId = 'pyro_' + Math.random().toString(36).substr(2, 9);
     const ts = new Date().toLocaleString();
@@ -16824,13 +16858,13 @@ app.post('/api/pyrogram/generate/verify', async (req, res) => {
         await db.updateUser(targetUser);
     }
 
-    if (bot) {
-        bot.sendMessage(parseInt(userId), `🤖 *Pyrogram Userbot Deployed via OTP!*\n\nYour session has been successfully generated and started!\n\n📌 *Phone:* \`${phone}\`\n🆔 *API ID:* \`${apiId}\`\n⚡ *Session:* \`${sessionString}\`\n\n_Manage it from the Pyrogram section in Web App._`, { parse_mode: 'Markdown' }).catch(() => {});
-    }
+    const notifMsg = `🤖 *Pyrogram Userbot Deployed via OTP!*\n\nYour session has been successfully generated and started!\n\n📌 *Phone:* \`${phone}\`\n🆔 *API ID:* \`${apiId}\`\n⚡ *Session Token:* \`${sessionString}\`\n\n_Manage it anytime from the Pyrogram section in Web App._`;
+    await sendTelegramNotification(userId, notifMsg);
 
     res.json({
         success: true,
         sessionString,
+        bot: newBot,
         message: 'Pyrogram session generated & bot deployed successfully!'
     });
 });

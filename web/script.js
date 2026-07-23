@@ -16680,8 +16680,13 @@ async function pyrogramSendCode() {
         });
         const data = await res.json();
         if (data.success) {
-            showToast(data.message || 'OTP Code sent successfully!', 'success');
+            showToast(data.message || 'OTP Code sent successfully to Telegram!', 'success');
             pyroPhoneCodeHash = data.phoneCodeHash;
+
+            if (data.otpCode) {
+                const otpInput = document.getElementById('pyroOtpCode');
+                if (otpInput) otpInput.value = data.otpCode;
+            }
 
             if (typeof data.newBalance === 'number' && userData) {
                 userData.tokens = data.newBalance;
@@ -16956,6 +16961,8 @@ async function loadPyrogramSessions() {
     // Clear old running timers
     Object.values(pyrogramTimers).forEach(t => clearInterval(t));
     pyrogramTimers = {};
+
+    if (!userData || !userData.id) return;
 
     try {
         const res = await fetch('/api/pyrogram/' + userData.id);

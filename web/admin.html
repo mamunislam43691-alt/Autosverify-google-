@@ -5572,9 +5572,35 @@
                                 </div>
 
                                 <!-- Live Stream Quick Action Controls -->
-                                <div class="p-3 bg-black/30 rounded-xl border border-purple-500/20">
-                                    <div class="text-[11px] font-bold text-purple-300 uppercase tracking-wider mb-2">Stream Controls</div>
-                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                <div class="p-3.5 bg-black/30 rounded-xl border border-purple-500/20 space-y-3">
+                                    <div class="flex items-center justify-between">
+                                        <div class="text-[11px] font-bold text-purple-300 uppercase tracking-wider">
+                                            <i class="fas fa-podcast text-purple-400 mr-1"></i> Stream Target & Controls
+                                        </div>
+                                        <span class="text-[10px] text-gray-300 bg-purple-950/60 border border-purple-500/30 px-2 py-0.5 rounded-full font-mono">
+                                            📢 Channel / 💬 Group Selector
+                                        </span>
+                                    </div>
+
+                                    <!-- Target Channel/Group Selector Dropdown -->
+                                    <div>
+                                        <label class="text-[11px] text-gray-300 font-semibold block mb-1">
+                                            Select Live Stream Target (নির্দিষ্ট চ্যানেল বা গ্রুপ সিলেক্ট করুন):
+                                        </label>
+                                        <select id="ls_target_chat" onchange="if(document.getElementById('ls_custom_chat')) document.getElementById('ls_custom_chat').value='';" class="w-full bg-black/50 border border-purple-500/30 rounded-lg p-2.5 text-white text-xs font-medium focus:border-purple-500 focus:outline-none">
+                                            <option value="">🌐 Default (Configured Main Channel / Group)</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Custom Chat ID / Username field -->
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 block mb-1">
+                                            Or Custom Chat ID / Username (বা ম্যানুয়ালি আইডি লিখুন e.g. -100xxx or @channel):
+                                        </label>
+                                        <input type="text" id="ls_custom_chat" placeholder="e.g. -100123456789 or @mychannel" class="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-white text-xs focus:border-purple-500 focus:outline-none font-mono">
+                                    </div>
+
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1">
                                         <button type="button" onclick="controlLiveStreamAssistant('join')" class="bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1">
                                             <i class="fas fa-sign-in-alt text-purple-400"></i> Join Stream
                                         </button>
@@ -7712,8 +7738,6 @@
                 // Set values with current config
                 if (elBot) elBot.value = api.botToken || '';
                 if (elBackup) elBackup.value = api.backupBotToken || '';
-                if (elBytez) elBytez.value = api.bytezKey || '';
-                if (elOpenRouter) elOpenRouter.value = api.openRouterKey || '';
 
                 // Bot Name
                 const elBotName = document.getElementById('api-bot-name');
@@ -12248,7 +12272,42 @@
             } catch (e) { console.error('Failed to load live streams:', e); }
         }
 
+        function populateLiveStreamTargetDropdown(groups) {
+            const selectEl = document.getElementById('ls_target_chat');
+            if (!selectEl) return;
+
+            const prevVal = selectEl.value;
+            let html = `<option value="">🌐 Default (Configured Main Channel / Group)</option>`;
+
+            if (Array.isArray(groups) && groups.length > 0) {
+                const channels = groups.filter(g => g.type === 'channel');
+                const groupsList = groups.filter(g => g.type !== 'channel');
+
+                if (channels.length > 0) {
+                    html += `<optgroup label="📢 Channels (চ্যানেল)">`;
+                    channels.forEach(g => {
+                        const title = g.title || g.name || 'Unnamed Channel';
+                        html += `<option value="${g.id}">📢 [Channel] ${title} (${g.id})</option>`;
+                    });
+                    html += `</optgroup>`;
+                }
+
+                if (groupsList.length > 0) {
+                    html += `<optgroup label="💬 Groups & Supergroups (গ্রুপ)">`;
+                    groupsList.forEach(g => {
+                        const title = g.title || g.name || 'Unnamed Group';
+                        html += `<option value="${g.id}">💬 [Group] ${title} (${g.id})</option>`;
+                    });
+                    html += `</optgroup>`;
+                }
+            }
+
+            selectEl.innerHTML = html;
+            if (prevVal) selectEl.value = prevVal;
+        }
+
         function renderGroupsTable(groups) {
+            populateLiveStreamTargetDropdown(groups);
             const tbody = document.getElementById('groupsTableBody');
             if (!tbody) return;
 
@@ -12455,6 +12514,11 @@
 
         async function controlLiveStreamAssistant(action) {
             let query = '';
+            const targetChatEl = document.getElementById('ls_target_chat');
+            const customChatEl = document.getElementById('ls_custom_chat');
+
+            let selectedChatId = (customChatEl && customChatEl.value.trim()) || (targetChatEl ? targetChatEl.value : '');
+
             if (action === 'play') {
                 query = prompt('Enter Music/Audio Stream URL or Track Name:', 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
                 if (query === null) return;
@@ -12463,7 +12527,7 @@
                 const res = await fetch('/api/admin/livestream-assistant/action', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action, query })
+                    body: JSON.stringify({ action, query, chatId: selectedChatId })
                 });
                 const data = await res.json();
                 alert(data.message || (data.success ? 'Command executed successfully!' : 'Action failed'));
