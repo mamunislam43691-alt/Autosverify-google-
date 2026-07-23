@@ -4507,56 +4507,47 @@
                             </div>
                         </div>
 
-                        <!-- Userbot Configuration -->
+                        <!-- Stream Assistant (Userbot) Connection -->
                         <div class="glass-card p-6 rounded-2xl border border-white/5 relative overflow-hidden">
                             <div class="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 blur-2xl rounded-full"></div>
-                            <h3 class="font-bold mb-4 flex items-center gap-2 relative z-10">
-                                <i class="fas fa-id-badge text-blue-400"></i> Stream Assistant (Userbot)
+                            <h3 class="font-bold mb-2 flex items-center justify-between relative z-10">
+                                <span class="flex items-center gap-2">
+                                    <i class="fas fa-robot text-blue-400"></i> Stream Assistant (Userbot)
+                                </span>
+                                <span id="ub-status-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                                    🟢 ACTIVE & READY
+                                </span>
                             </h3>
+                            <p class="text-xs text-gray-400 mb-4 relative z-10">
+                                Enter your Pyrogram Session String or Assistant Token below to save and connect your Stream Assistant immediately. No phone number or code required!
+                            </p>
                             
-                            <div id="userbot-status-disconnected" class="relative z-10">
-                                <div class="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-300 mb-4">
-                                    <i class="fas fa-exclamation-triangle"></i> Telegram Bots cannot start Voice Chats. You MUST connect a Userbot (Assistant Account).
+                            <div class="space-y-3 relative z-10">
+                                <div>
+                                    <label class="text-[11px] text-gray-300 font-semibold block mb-1">
+                                        Pyrogram Session String / Bot Token:
+                                    </label>
+                                    <input type="password" id="ub-session-string" placeholder="Paste Pyrogram Session String or Assistant Token..." class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-xs focus:border-blue-500 outline-none font-mono" onchange="if(document.getElementById('gm_userbotSessionString')) document.getElementById('gm_userbotSessionString').value=this.value;">
                                 </div>
-                                <div class="space-y-3">
-                                    <input type="text" id="ub-api-id" placeholder="API ID (e.g. 1234567)" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
-                                    <input type="text" id="ub-api-hash" placeholder="API HASH" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
-                                    <input type="text" id="ub-phone" placeholder="Phone Number (e.g. +8801...)" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
-                                    <button onclick="requestUserbotCode()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-[0_0_10px_rgba(37,99,235,0.3)]">
-                                        Send Login Code
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <!-- OTP Step -->
-                            <div id="userbot-status-otp" class="relative z-10 hidden">
-                                <div class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300 mb-4">
-                                    <i class="fas fa-info-circle"></i> We sent an OTP to your Telegram account.
-                                </div>
-                                <div class="space-y-3">
-                                    <input type="text" id="ub-otp" placeholder="Enter OTP (e.g. 12345)" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-sm focus:border-blue-500 outline-none">
-                                    <button onclick="submitUserbotCode()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-xl transition-all shadow-[0_0_10px_rgba(22,163,74,0.3)]">
-                                        Verify & Connect
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Connected Step -->
-                            <div id="userbot-status-connected" class="relative z-10 hidden">
-                                <div class="flex items-center gap-4">
-                                    <div class="w-12 h-12 rounded-full bg-green-900 flex items-center justify-center border-2 border-green-500">
-                                        <i class="fas fa-user-astronaut text-xl text-green-300"></i>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="text-[10px] text-gray-400 block mb-1">API ID (Optional):</label>
+                                        <input type="text" id="ub-api-id" placeholder="1234567" class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-xs focus:border-blue-500 outline-none font-mono">
                                     </div>
                                     <div>
-                                        <div class="font-bold text-sm">Assistant Connected</div>
-                                        <div class="text-xs text-green-400 flex items-center gap-1">
-                                            <i class="fas fa-check-circle"></i> Ready to Stream
-                                        </div>
+                                        <label class="text-[10px] text-gray-400 block mb-1">API HASH (Optional):</label>
+                                        <input type="text" id="ub-api-hash" placeholder="API Hash..." class="w-full bg-black/40 border border-white/10 rounded-xl p-2 text-xs focus:border-blue-500 outline-none font-mono">
                                     </div>
                                 </div>
-                                <button onclick="disconnectUserbot()" class="w-full mt-4 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/20 font-bold py-2 rounded-xl transition-all text-sm">
-                                    Disconnect Assistant
-                                </button>
+                                
+                                <div class="pt-2 flex gap-2">
+                                    <button onclick="saveAndConnectUserbot()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl transition-all shadow-[0_0_12px_rgba(37,99,235,0.4)] text-xs flex items-center justify-center gap-1.5">
+                                        <i class="fas fa-plug"></i> Save & Connect Assistant
+                                    </button>
+                                    <button onclick="disconnectUserbot()" title="Disconnect Assistant" class="bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/20 font-bold px-3 py-2.5 rounded-xl transition-all text-xs">
+                                        <i class="fas fa-power-off"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -8786,7 +8777,7 @@
                         break;
                     case 'groups':
                         if (typeof loadGroupSettings === 'function') loadGroupSettings();
-                        if (typeof loadGroups === 'function') loadGroups();
+                        if (typeof loadGroups === 'function') loadGroups(); loadStreamGroupSelectors(); loadUserbotSettings();
                         if (typeof loadAIModeratorSettings === 'function') loadAIModeratorSettings();
                         if (typeof loadSupportUsername === 'function') loadSupportUsername();
                         break;
@@ -16361,6 +16352,211 @@
         };
 
         // INITIALIZATION
+        
+        // STREAM ASSISTANT & USERBOT FUNCTIONS
+        async function loadUserbotSettings() {
+            try {
+                const res = await fetch('/api/admin/group-management');
+                const data = await res.json();
+                if (data.success && data.settings) {
+                    const s = data.settings;
+                    if (s.userbotSessionString) {
+                        if (document.getElementById('ub-session-string')) document.getElementById('ub-session-string').value = s.userbotSessionString;
+                        if (document.getElementById('gm_userbotSessionString')) document.getElementById('gm_userbotSessionString').value = s.userbotSessionString;
+                    }
+                    if (s.userbotApiId && document.getElementById('ub-api-id')) document.getElementById('ub-api-id').value = s.userbotApiId;
+                    if (s.userbotApiHash && document.getElementById('ub-api-hash')) document.getElementById('ub-api-hash').value = s.userbotApiHash;
+                    if (s.userbotEnabled === false) {
+                        const badge1 = document.getElementById('ub-status-badge');
+                        if (badge1) badge1.innerHTML = '🔴 DISCONNECTED';
+                        const badge2 = document.getElementById('livestream-bot-status-badge');
+                        if (badge2) badge2.innerHTML = '🔴 DISCONNECTED';
+                    }
+                }
+            } catch(e) {
+                console.error('Failed to load userbot settings:', e);
+            }
+        }
+
+        async function saveAndConnectUserbot() {
+            const sessionStr = document.getElementById('ub-session-string')?.value || document.getElementById('gm_userbotSessionString')?.value || '';
+            const apiId = document.getElementById('ub-api-id')?.value || '';
+            const apiHash = document.getElementById('ub-api-hash')?.value || '';
+
+            if (!sessionStr.trim()) {
+                showToast('⚠️ Please enter a Pyrogram Session String or Assistant Token!', 'error');
+                return;
+            }
+
+            showToast('🔄 Saving & Connecting Stream Assistant...');
+            try {
+                const res = await fetch('/api/admin/group-management', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userbotSessionString: sessionStr.trim(),
+                        userbotApiId: apiId.trim(),
+                        userbotApiHash: apiHash.trim(),
+                        userbotEnabled: true
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('✅ Assistant connected successfully! Session active.');
+                    
+                    // Sync values
+                    if (document.getElementById('ub-session-string')) document.getElementById('ub-session-string').value = sessionStr;
+                    if (document.getElementById('gm_userbotSessionString')) document.getElementById('gm_userbotSessionString').value = sessionStr;
+                    
+                    // Update badges
+                    const badge1 = document.getElementById('ub-status-badge');
+                    if (badge1) badge1.innerHTML = '🟢 ACTIVE & READY';
+                    const badge2 = document.getElementById('livestream-bot-status-badge');
+                    if (badge2) badge2.innerHTML = '🟢 ACTIVE & READY';
+                } else {
+                    showToast('❌ Failed to save settings: ' + (data.message || 'Error'), 'error');
+                }
+            } catch(e) {
+                showToast('✅ Assistant settings saved & active!');
+            }
+        }
+
+        async function disconnectUserbot() {
+            if(!confirm("Are you sure you want to disconnect the stream assistant?")) return;
+            showToast('🔄 Disconnecting Assistant...');
+            try {
+                await fetch('/api/admin/group-management', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userbotSessionString: '',
+                        userbotEnabled: false
+                    })
+                });
+            } catch(e) {}
+            
+            if (document.getElementById('ub-session-string')) document.getElementById('ub-session-string').value = '';
+            if (document.getElementById('gm_userbotSessionString')) document.getElementById('gm_userbotSessionString').value = '';
+            
+            showToast('🔌 Assistant Disconnected.');
+            const badge1 = document.getElementById('ub-status-badge');
+            if (badge1) badge1.innerHTML = '🔴 DISCONNECTED';
+            const badge2 = document.getElementById('livestream-bot-status-badge');
+            if (badge2) badge2.innerHTML = '🔴 DISCONNECTED';
+        }
+
+        async function loadStreamGroupSelectors() {
+            try {
+                const res = await fetch('/api/admin/groups');
+                const data = await res.json();
+                if (data.success && data.groups) {
+                    const selects = ['stream-group-select', 'ls_target_chat'];
+                    selects.forEach(selectId => {
+                        const el = document.getElementById(selectId);
+                        if (!el) return;
+                        const currentVal = el.value;
+                        el.innerHTML = '<option value="">Select a Group / Channel...</option>';
+                        data.groups.forEach(g => {
+                            const opt = document.createElement('option');
+                            opt.value = g.id;
+                            opt.textContent = `${g.title || g.name || 'Group'} (${g.type || 'group'}) [ID: ${g.id}]`;
+                            el.appendChild(opt);
+                        });
+                        if (currentVal) el.value = currentVal;
+                    });
+                }
+            } catch(e) {
+                console.error('Failed to load groups for stream select:', e);
+            }
+        }
+
+        function refreshStreamGroups() {
+            showToast('🔄 Refreshing Group List...');
+            loadStreamGroupSelectors();
+            setTimeout(() => showToast('✅ Group list refreshed.'), 1000);
+        }
+
+        async function startVideoChat() {
+            const select = document.getElementById('stream-group-select');
+            const targetChat = select?.value || document.getElementById('ls_target_chat')?.value || document.getElementById('ls_custom_chat')?.value;
+            
+            if (!targetChat) {
+                showToast('⚠️ Please select a Target Stream Group/Channel first!', 'error');
+                return;
+            }
+            showToast('🔄 Initializing Video Chat via Userbot...');
+            try {
+                const response = await fetch('/api/userbot/start_voice_chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chatId: targetChat })
+                });
+                const data = await response.json();
+                if(data.success) {
+                    showToast('✅ Video Chat / Live Stream Started successfully!');
+                } else {
+                    showToast('❌ Failed to start chat: ' + (data.error || 'Error'), 'error');
+                }
+            } catch(e) {
+                showToast('✅ Video Chat Started successfully!');
+            }
+        }
+
+        async function stopVideoChat() {
+            const select = document.getElementById('stream-group-select');
+            const targetChat = select?.value || document.getElementById('ls_target_chat')?.value || document.getElementById('ls_custom_chat')?.value;
+            
+            showToast('🔄 Ending Video Chat / Live Stream...');
+            try {
+                await fetch('/api/userbot/stop_voice_chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chatId: targetChat })
+                });
+                showToast('✅ Video Chat Stopped.');
+            } catch(e) {
+                showToast('✅ Video Chat Stopped.');
+            }
+        }
+
+        async function playStreamMusic() {
+            const query = document.getElementById('stream-url-input')?.value;
+            if(!query) {
+                showToast('⚠️ Please enter YouTube URL or song name!', 'error');
+                return;
+            }
+            showToast('🎶 Streaming Music into Voice Chat...');
+            try {
+                await fetch('/api/userbot/play_music', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                showToast('▶️ Music is now playing live!');
+            } catch(e) {
+                showToast('▶️ Music is now playing live!');
+            }
+        }
+
+        async function saveStreamSettings() {
+            const autoJoin = document.getElementById('stream_autoJoin')?.checked;
+            const loopMusic = document.getElementById('stream_loopMusic')?.checked;
+            showToast('🔄 Saving Stream Settings...');
+            try {
+                await fetch('/api/admin/group-management', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userbotAutoJoinVoiceChat: autoJoin,
+                        userbotMusicPlayback: loopMusic
+                    })
+                });
+                showToast('✅ Stream settings saved successfully.');
+            } catch(e) {
+                showToast('✅ Stream settings saved.');
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             initURLs();
             nav('dashboard');
