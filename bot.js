@@ -149,8 +149,9 @@ async function sendBackupBotMenu(chatId) {
 
 async function initBackupBot() {
     const backupToken = (config.BACKUP_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.backupBotToken) || '').trim();
+    const finalToken = (config.TELEGRAM_BOT_TOKEN || (db.data && db.data.apiKeys && db.data.apiKeys.botToken) || '').trim();
 
-    if (backupBotInstance && typeof backupBotInstance.stopPolling === 'function') {
+    if (backupBotInstance && typeof backupBotInstance.stopPolling === 'function' && backupBotInstance !== global.botInstance) {
         try {
             console.log('[BACKUP_BOT] Stopping previous backup bot polling...');
             await backupBotInstance.stopPolling();
@@ -160,158 +161,219 @@ async function initBackupBot() {
     }
 
     if (isValidToken(backupToken)) {
-        console.log('[BACKUP_BOT] Initializing Backup Bot with token:', backupToken.slice(0, 10) + '...');
-        try {
-            backupBotInstance = new TelegramBot(backupToken, {
-                polling: true,
-                baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
-            });
-
+        if (backupToken === finalToken && global.botInstance) {
+            console.log('[BACKUP_BOT] Backup Bot Token is same as Main Bot Token. Reusing main bot instance.');
+            backupBotInstance = global.botInstance;
+        } else {
+            console.log('[BACKUP_BOT] Initializing Backup Bot with token:', backupToken.slice(0, 10) + '...');
             try {
-                const server = require('./database/server.js');
-                if (typeof server.setBackupBot === 'function') {
-                    server.setBackupBot(backupBotInstance);
-                }
-            } catch (e) { }
-
-            backupBotInstance.on('message', async (msg) => {
-                if (!msg || !msg.chat) return;
-                const chatId = msg.chat.id;
-                const userId = msg.from ? msg.from.id : chatId;
-
-                if (!isAdmin(userId)) {
-                    await backupBotInstance.sendMessage(chatId, `⚠️ <b>Access Denied</b>\n\nThis Backup & Database Management Bot is strictly reserved for Administrator ID: <code>${getAdminId() || 'Not Configured'}</code>.\n\nYour User ID: <code>${userId}</code>`, { parse_mode: 'HTML' }).catch(() => {});
-                    return;
-                }
-
-                if (msg.document && msg.document.file_name && msg.document.file_name.endsWith('.json')) {
-                    try {
-                        const fileLink = await backupBotInstance.getFileLink(msg.document.file_id);
-                        const fetch = require('node-fetch');
-                        const res = await fetch(fileLink);
-                        const fileContent = await res.text();
-                        const parsed = JSON.parse(fileContent);
-
-                        if (!parsed.users && !parsed.apiKeys && !parsed.adminSettings) {
-                            await backupBotInstance.sendMessage(chatId, `❌ **Invalid Backup File**: Uploaded JSON does not match database structure.`, { parse_mode: 'Markdown' });
-                            return;
-                        }
-
-                        global._pendingDbRestore = parsed;
-
-                        await backupBotInstance.sendMessage(chatId, `📥 **Valid Database Backup Received!**\n\nFile Size: ${(fileContent.length / 1024).toFixed(2)} KB\nUsers: ${Object.keys(parsed.users || {}).length}\n\n⚠️ Are you sure you want to restore and overwrite the current database?`, {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '✅ Confirm Restore DB', callback_data: 'backup_confirm_restore' }, { text: '❌ Cancel', callback_data: 'backup_cancel_restore' }]
-                                ]
-                            }
-                        });
-                        return;
-                    } catch (e) {
-                        await backupBotInstance.sendMessage(chatId, `❌ **Restore Failed**: Error parsing uploaded JSON file: ${e.message}`, { parse_mode: 'Markdown' });
-                        return;
+                backupBotInstance = new TelegramBot(backupToken, {
+                    polling: true,
+                    baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
+                });
+                backupBotInstance.on('polling_error', (err) => {
+                    const is404 = err.message && (err.message.includes('404') || err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('Not Found'));
+                    if (is404) {
+                        console.warn('⚠️ [BACKUP_BOT] Token is invalid or not found (' + err.message + '). Stopping backup bot polling.');
+                        try { backupBotInstance.stopPolling(); } catch (e) {}
+                    } else if (err.code !== 'ETELEGRAM' || !err.message.includes('409')) {
+                        console.warn('[BACKUP_BOT] Polling error:', err.message);
                     }
-                }
-
-                await sendBackupBotMenu(chatId);
-            });
-
-            backupBotInstance.on('callback_query', async (query) => {
-                const chatId = query.message?.chat?.id;
-                const userId = query.from?.id;
-                const data = query.data;
-
-                if (!isAdmin(userId)) {
-                    await backupBotInstance.answerCallbackQuery(query.id, { text: '⚠️ Admin access required', show_alert: true });
-                    return;
-                }
-
-                await backupBotInstance.answerCallbackQuery(query.id).catch(() => {});
-
-                const fs = require('fs');
-                const dbPath = db.filePath || './database.json';
-
-                if (data === 'backup_download') {
-                    try {
-                        if (fs.existsSync(dbPath)) {
-                            await backupBotInstance.sendDocument(chatId, dbPath, {
-                                caption: `📦 **Database Backup File**\n\nGenerated: ${new Date().toLocaleString()}\nUsers: ${Object.keys(db.data?.users || {}).length}`
-                            });
-                        } else {
-                            await backupBotInstance.sendMessage(chatId, `❌ Database file not found on disk.`);
-                        }
-                    } catch (e) {
-                        await backupBotInstance.sendMessage(chatId, `❌ Error sending backup document: ${e.message}`);
-                    }
-                } else if (data === 'backup_stats') {
-                    const statsMsg = `📊 **Database & System Statistics**\n\n` +
-                        `👤 **Total Users:** ${Object.keys(db.data?.users || {}).length}\n` +
-                        `📢 **Total Groups/Channels:** ${Object.keys(db.data?.groups || {}).length}\n` +
-                        `📦 **DB Size:** ${((fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0) / 1024).toFixed(2)} KB\n` +
-                        `⚙️ **Admin ID:** \`${getAdminId()}\`\n` +
-                        `⏱️ **Uptime:** ${Math.floor(process.uptime() / 60)} minutes\n` +
-                        `🟢 **Status:** Operational`;
-                    await backupBotInstance.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown' });
-                } else if (data === 'backup_users_summary') {
-                    const users = Object.values(db.data?.users || {});
-                    const activeUsers = users.filter(u => (u.balance || 0) > 0 || (u.credits || 0) > 0).length;
-                    const bannedUsers = users.filter(u => u.banned).length;
-                    const msg = `👥 **Users Summary**\n\n` +
-                        `• Total Registered: **${users.length}**\n` +
-                        `• Active (with balance): **${activeUsers}**\n` +
-                        `• Banned: **${bannedUsers}**`;
-                    await backupBotInstance.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-                } else if (data === 'backup_clean_menu') {
-                    const cleanMsg = `🗑️ **Data Cleanup & Maintenance Menu**\n\nSelect an operation:`;
-                    const cleanKb = {
-                        inline_keyboard: [
-                            [{ text: '🧹 Clear Temp Server Logs', callback_data: 'backup_clear_temp' }],
-                            [{ text: '🔙 Back to Menu', callback_data: 'backup_main_menu' }]
-                        ]
-                    };
-                    await backupBotInstance.sendMessage(chatId, cleanMsg, { parse_mode: 'Markdown', reply_markup: cleanKb });
-                } else if (data === 'backup_main_menu') {
-                    await sendBackupBotMenu(chatId);
-                } else if (data === 'backup_clear_temp') {
-                    if (db.data.serverLogs) db.data.serverLogs = [];
-                    if (db.data.mailSessions) db.data.mailSessions = {};
-                    db.save();
-                    await backupBotInstance.sendMessage(chatId, `✅ **Temporary logs and sessions cleared successfully.**`);
-                } else if (data === 'backup_reload') {
-                    db.load();
-                    await reloadBotInstance();
-                    await backupBotInstance.sendMessage(chatId, `🔄 **System reloaded from disk and bot instances restarted.**`);
-                } else if (data === 'backup_confirm_restore') {
-                    if (global._pendingDbRestore) {
-                        if (fs.existsSync(dbPath)) {
-                            try {
-                                if (!fs.existsSync('./backups')) fs.mkdirSync('./backups');
-                                fs.copyFileSync(dbPath, `./backups/pre_restore_${Date.now()}.json`);
-                            } catch (e) { }
-                        }
-                        db.data = global._pendingDbRestore;
-                        db.save();
-                        db.load();
-                        global._pendingDbRestore = null;
-                        await backupBotInstance.sendMessage(chatId, `✅ **Database Restored Successfully!** System state updated.`);
-                    } else {
-                        await backupBotInstance.sendMessage(chatId, `⚠️ No pending restore file found. Please upload a .json backup file first.`);
-                    }
-                } else if (data === 'backup_cancel_restore') {
-                    global._pendingDbRestore = null;
-                    await backupBotInstance.sendMessage(chatId, `❌ Database restore cancelled.`);
-                }
-            });
-
-            console.log('✅ Backup Bot is now polling messages and ready.');
-        } catch (err) {
-            console.error('[BACKUP_BOT] Failed to start backup bot:', err.message);
-            backupBotInstance = null;
+                });
+            } catch (e) {
+                console.error('[BACKUP_BOT] Error instantiating Backup Bot:', e.message);
+            }
         }
-    } else {
-        backupBotInstance = null;
+    } else if (global.botInstance) {
+        // Re-use main bot instance if backup token is not explicitly set
+        backupBotInstance = global.botInstance;
     }
+
+    if (!backupBotInstance) return;
+
+    try {
+        const server = require('./database/server.js');
+        if (typeof server.setBackupBot === 'function') {
+            server.setBackupBot(backupBotInstance);
+        }
+    } catch (e) { }
+
+    // Register /start, /menu, /download, /stats in Telegram menu
+    try {
+        if (typeof backupBotInstance.setMyCommands === 'function') {
+            backupBotInstance.setMyCommands([
+                { command: 'start', description: 'Open Backup & Database Panel' },
+                { command: 'menu', description: 'Show Main Menu' },
+                { command: 'download', description: 'Download DB Backup File' },
+                { command: 'stats', description: 'View System Statistics' }
+            ]).catch(() => {});
+        }
+    } catch (e) {}
+
+    backupBotInstance.on('message', async (msg) => {
+        if (!msg || !msg.chat) return;
+        const chatId = msg.chat.id;
+        const userId = msg.from ? msg.from.id : chatId;
+        const text = (msg.text || '').trim();
+
+        // Handle Master Admin binding if not set
+        let currentAdminId = getAdminId();
+        if (!currentAdminId) {
+            if (!db.data.apiKeys) db.data.apiKeys = {};
+            db.data.apiKeys.adminId = String(userId);
+            db.save(true);
+            await backupBotInstance.sendMessage(chatId, '👑 <b>Master Admin Registered!</b>\n\nYour Telegram User ID <code>' + userId + '</code> has been saved as Master Administrator.', { parse_mode: 'HTML' }).catch(() => {});
+        } else if (!isAdmin(userId)) {
+            await backupBotInstance.sendMessage(chatId, '⚠️ <b>Access Denied</b>\n\nThis Backup & Database Management Bot is strictly reserved for Administrator ID: <code>' + currentAdminId + '</code>.\n\nYour User ID: <code>' + userId + '</code>', { parse_mode: 'HTML' }).catch(() => {});
+            return;
+        }
+
+        // Direct commands
+        if (text === '/download') {
+            const fs = require('fs');
+            const dbPath = db.filePath || './database.json';
+            if (fs.existsSync(dbPath)) {
+                await backupBotInstance.sendDocument(chatId, dbPath, {
+                    caption: '📦 **Database Backup File**\n\nGenerated: ' + new Date().toLocaleString() + '\nUsers: ' + Object.keys(db.data?.users || {}).length
+                }).catch(e => backupBotInstance.sendMessage(chatId, '❌ Error: ' + e.message));
+            } else {
+                await backupBotInstance.sendMessage(chatId, '❌ Database file not found on disk.');
+            }
+            return;
+        }
+
+        if (text === '/stats') {
+            const fs = require('fs');
+            const dbPath = db.filePath || './database.json';
+            const statsMsg = '📊 **Database & System Statistics**\n\n' +
+                '👤 **Total Users:** ' + Object.keys(db.data?.users || {}).length + '\n' +
+                '📢 **Total Groups/Channels:** ' + Object.keys(db.data?.groups || {}).length + '\n' +
+                '📦 **DB Size:** ' + ((fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0) / 1024).toFixed(2) + ' KB\n' +
+                '⚙️ **Admin ID:** ' + getAdminId() + '\n' +
+                '⏱️ **Uptime:** ' + Math.floor(process.uptime() / 60) + ' minutes\n' +
+                '🟢 **Status:** Operational';
+            await backupBotInstance.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown' }).catch(() => {});
+            return;
+        }
+
+        // Uploaded JSON file restore
+        if (msg.document && msg.document.file_name && msg.document.file_name.endsWith('.json')) {
+            try {
+                const fileLink = await backupBotInstance.getFileLink(msg.document.file_id);
+                const fetch = require('node-fetch');
+                const res = await fetch(fileLink);
+                const fileContent = await res.text();
+                const parsed = JSON.parse(fileContent);
+                if (!parsed.users && !parsed.apiKeys && !parsed.adminSettings) {
+                    await backupBotInstance.sendMessage(chatId, '❌ **Invalid Backup File**: Uploaded JSON does not match database structure.', { parse_mode: 'Markdown' });
+                    return;
+                }
+                global._pendingDbRestore = parsed;
+                await backupBotInstance.sendMessage(chatId, '📥 **Valid Database Backup Received!**\n\nFile Size: ' + (fileContent.length / 1024).toFixed(2) + ' KB\nUsers: ' + Object.keys(parsed.users || {}).length + '\n\n⚠️ Are you sure you want to restore and overwrite current database?', {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '✅ Confirm Restore DB', callback_data: 'backup_confirm_restore' }, { text: '❌ Cancel', callback_data: 'backup_cancel_restore' }]
+                        ]
+                    }
+                });
+                return;
+            } catch (e) {
+                await backupBotInstance.sendMessage(chatId, '❌ **Restore Failed**: Error parsing uploaded JSON file: ' + e.message, { parse_mode: 'Markdown' });
+                return;
+            }
+        }
+
+        // Show main backup menu for /start, /menu, /help, or any message
+        await sendBackupBotMenu(chatId);
+    });
+
+    backupBotInstance.on('callback_query', async (query) => {
+        const chatId = query.message?.chat?.id;
+        const userId = query.from?.id;
+        const data = query.data;
+
+        if (!isAdmin(userId)) {
+            await backupBotInstance.answerCallbackQuery(query.id, { text: '⚠️ Admin access required', show_alert: true });
+            return;
+        }
+
+        await backupBotInstance.answerCallbackQuery(query.id).catch(() => {});
+
+        const fs = require('fs');
+        const dbPath = db.filePath || './database.json';
+
+        if (data === 'backup_download') {
+            try {
+                if (fs.existsSync(dbPath)) {
+                    await backupBotInstance.sendDocument(chatId, dbPath, {
+                        caption: '📦 **Database Backup File**\n\nGenerated: ' + new Date().toLocaleString() + '\nUsers: ' + Object.keys(db.data?.users || {}).length
+                    });
+                } else {
+                    await backupBotInstance.sendMessage(chatId, '❌ Database file not found on disk.');
+                }
+            } catch (e) {
+                await backupBotInstance.sendMessage(chatId, '❌ Error sending backup document: ' + e.message);
+            }
+        } else if (data === 'backup_stats') {
+            const statsMsg = '📊 **Database & System Statistics**\n\n' +
+                '👤 **Total Users:** ' + Object.keys(db.data?.users || {}).length + '\n' +
+                '📢 **Total Groups/Channels:** ' + Object.keys(db.data?.groups || {}).length + '\n' +
+                '📦 **DB Size:** ' + ((fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0) / 1024).toFixed(2) + ' KB\n' +
+                '⚙️ **Admin ID:** ' + getAdminId() + '\n' +
+                '⏱️ **Uptime:** ' + Math.floor(process.uptime() / 60) + ' minutes\n' +
+                '🟢 **Status:** Operational';
+            await backupBotInstance.sendMessage(chatId, statsMsg, { parse_mode: 'Markdown' });
+        } else if (data === 'backup_users_summary') {
+            const users = Object.values(db.data?.users || {});
+            const activeUsers = users.filter(u => (u.balance || 0) > 0 || (u.credits || 0) > 0).length;
+            const bannedUsers = users.filter(u => u.banned).length;
+            const msg = '👥 **Users Summary**\n\n' +
+                '• Total Registered: **' + users.length + '**\n' +
+                '• Active (with balance): **' + activeUsers + '**\n' +
+                '• Banned: **' + bannedUsers + '**';
+            await backupBotInstance.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+        } else if (data === 'backup_clean_menu') {
+            const cleanMsg = '🗑️ **Data Cleanup & Maintenance Menu**\n\nSelect an operation:';
+            const cleanKb = {
+                inline_keyboard: [
+                    [{ text: '🧹 Clear Temp Server Logs', callback_data: 'backup_clear_temp' }],
+                    [{ text: '🔙 Back to Menu', callback_data: 'backup_main_menu' }]
+                ]
+            };
+            await backupBotInstance.sendMessage(chatId, cleanMsg, { parse_mode: 'Markdown', reply_markup: cleanKb });
+        } else if (data === 'backup_main_menu') {
+            await sendBackupBotMenu(chatId);
+        } else if (data === 'backup_clear_temp') {
+            if (db.data.serverLogs) db.data.serverLogs = [];
+            if (db.data.mailSessions) db.data.mailSessions = {};
+            db.save();
+            await backupBotInstance.sendMessage(chatId, '✅ **Temporary logs and sessions cleared successfully.**');
+        } else if (data === 'backup_reload') {
+            db.load();
+            await reloadBotInstance();
+            await backupBotInstance.sendMessage(chatId, '🔄 **System reloaded from disk and bot instances restarted.**');
+        } else if (data === 'backup_confirm_restore') {
+            if (global._pendingDbRestore) {
+                if (fs.existsSync(dbPath)) {
+                    try {
+                        if (!fs.existsSync('./backups')) fs.mkdirSync('./backups');
+                        fs.copyFileSync(dbPath, './backups/pre_restore_' + Date.now() + '.json');
+                    } catch (e) { }
+                }
+                db.data = global._pendingDbRestore;
+                db.save();
+                db.load();
+                global._pendingDbRestore = null;
+                await backupBotInstance.sendMessage(chatId, '✅ **Database Restored Successfully!** System state updated.');
+            } else {
+                await backupBotInstance.sendMessage(chatId, '⚠️ No pending restore file found. Please upload a .json backup file first.');
+            }
+        } else if (data === 'backup_cancel_restore') {
+            global._pendingDbRestore = null;
+            await backupBotInstance.sendMessage(chatId, '❌ Database restore cancelled.');
+        }
+    });
 }
 
 async function initAssistantBot() {
@@ -334,6 +396,15 @@ async function initAssistantBot() {
             assistantBot = new TelegramBot(assistantToken, {
                 polling: true,
                 baseApiUrl: config.TELEGRAM_API_BASE || 'https://api.telegram.org'
+            });
+            assistantBot.on('polling_error', (err) => {
+                const is404 = err.message && (err.message.includes('404') || err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('Not Found'));
+                if (is404) {
+                    console.warn('⚠️ [ASSISTANT] Token is invalid or not found (' + err.message + '). Stopping assistant bot polling.');
+                    try { assistantBot.stopPolling(); } catch (e) {}
+                } else if (err.code !== 'ETELEGRAM' || !err.message.includes('409')) {
+                    console.warn('[ASSISTANT] Polling error:', err.message);
+                }
             });
             
             assistantBot.on('message', async (msg) => {
@@ -632,6 +703,12 @@ function setupBotListeners() {
     let retryTimeout = null;
 
     bot.on('polling_error', (err) => {
+        const is404or401 = err.message && (err.message.includes('404') || err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('Not Found'));
+        if (is404or401) {
+            console.warn('⚠️ [MAIN_BOT] Telegram Bot Token is invalid or not found (' + err.message + '). Stopping polling to avoid error loop.');
+            try { bot.stopPolling(); } catch (e) {}
+            return;
+        }
         // Only log actual errors, not conflict warnings (409)
         if (err.code !== 'ETELEGRAM' || !err.message.includes('409')) {
             const isNetworkError = err.message.includes('ECONNRESET') || 
@@ -1136,7 +1213,15 @@ function isAdmin(userId) {
 // Helper: Check if userbot is fully enabled and configured
 function isUserbotConfigured() {
     const settings = db.data?.adminSettings?.groupManagement || {};
-    return settings.userbotEnabled === true;
+    const apiKeys = db.data?.apiKeys || {};
+    if (settings.userbotEnabled === false) return false;
+    if (settings.userbotEnabled === true) return true;
+    return !!(
+        settings.userbotSessionString ||
+        settings.livestreamBotToken ||
+        apiKeys.backupBotToken ||
+        settings.userbotApiId
+    );
 }
 
 // ✅ NEW: Check if user is main admin (not helper)

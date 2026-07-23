@@ -6327,6 +6327,9 @@ app.get('/api/admin/group-management', (req, res) => {
         gm.autoApproveJoinRequests === true;
     const response = {
         ...gm,
+        autoDeleteSystemMessages: gm.autoDeleteSystemMessages !== false,
+        deleteJoinMessages: gm.deleteJoinMessages !== false,
+        deleteLeaveMessages: gm.deleteLeaveMessages !== false,
         autoApproveJoinRequests: autoApprove,
         requireTelegram: db.data.adminSettings.requireTelegram === true
     };
@@ -6404,14 +6407,23 @@ app.post('/api/admin/group-management', (req, res) => {
     if (!db.data.adminSettings.groupManagement) db.data.adminSettings.groupManagement = {};
     if (!db.data.apiKeys) db.data.apiKeys = {};
 
-    const { autoApproveJoinRequests, requireTelegram, userbotSessionString, ...rest } = newSettings;
+    const { autoApproveJoinRequests, requireTelegram, userbotSessionString, userbotApiId, userbotApiHash, livestreamBotToken, ...rest } = newSettings;
     db.data.adminSettings.groupManagement = {
         ...db.data.adminSettings.groupManagement,
         ...rest
     };
     if (userbotSessionString !== undefined) {
         db.data.adminSettings.groupManagement.userbotSessionString = userbotSessionString;
-        db.data.apiKeys.livestreamBotToken = userbotSessionString;
+    }
+    if (userbotApiId !== undefined) {
+        db.data.adminSettings.groupManagement.userbotApiId = userbotApiId;
+    }
+    if (userbotApiHash !== undefined) {
+        db.data.adminSettings.groupManagement.userbotApiHash = userbotApiHash;
+    }
+    if (livestreamBotToken !== undefined) {
+        db.data.adminSettings.groupManagement.livestreamBotToken = livestreamBotToken;
+        db.data.apiKeys.livestreamBotToken = livestreamBotToken;
     }
     if (typeof autoApproveJoinRequests === 'boolean') {
         db.data.adminSettings.autoApproveJoinRequests = autoApproveJoinRequests;
@@ -8023,25 +8035,7 @@ app.delete('/api/admin/providers/:id', (req, res) => {
 // GROUP MANAGEMENT API
 // =============================================
 
-// GET: Group Management Settings
-app.get('/api/admin/group-management', (req, res) => {
-    if (!db.data.adminSettings) db.data.adminSettings = {};
-    const settings = db.data.adminSettings.groupManagement || {};
-    // autoApproveJoinRequests lives at BOTH top-level and inside groupManagement — check both
-    const autoApprove = db.data.adminSettings.autoApproveJoinRequests === true ||
-        settings.autoApproveJoinRequests === true;
-    res.json({
-        success: true,
-        settings: {
-            ...settings,
-            autoDeleteSystemMessages: settings.autoDeleteSystemMessages !== false,
-            deleteJoinMessages: settings.deleteJoinMessages !== false,
-            deleteLeaveMessages: settings.deleteLeaveMessages !== false,
-            requireTelegram: db.data.adminSettings.requireTelegram === true,
-            autoApproveJoinRequests: autoApprove
-        }
-    });
-});
+// Group management GET route unified above
 
 // ===== AI MODERATOR API =====
 app.get('/api/admin/ai-moderator', (req, res) => {
@@ -16750,7 +16744,7 @@ app.get('/api/pyrogram/:userId', async (req, res) => {
     if (!user) return res.json({ success: false, message: 'User not found' });
 
     const gemsBalance = bhGetGems(user);
-    const sessions = Object.values(db.data.pyrogramBots.bots).filter(b => b.userId === userId);
+    const sessions = Object.values(db.data.pyrogramBots.bots).filter(b => b.userId === userId && !b.userDeleted);
     const activeCount = sessions.filter(b => b.status === 'Running').length;
     const history = db.data.pyrogramBots.billingHistory.filter(h => h.userId === userId).slice(0, 50);
 
@@ -16831,9 +16825,39 @@ app.post('/api/pyrogram/deploy', async (req, res) => {
 // ── POST /api/pyrogram/generate/send-code ───────────────────────────────────
 app.post('/api/pyrogram/generate/send-code', async (req, res) => {
     _ensurePyrogramData();
-    const { userId, phone, apiId, apiHash } = req.body;
-    if (!userId || !phone || !apiId || !apiHash) {
-        return res.json({ success: false, message: 'All fields (Phone, API ID, API Hash) are required.' });
+    let { userId, phone, apiId, apiHash } = req.body;
+    if (!userId || !phone) {
+        return res.json({ success: false, message: 'Phone number is required.' });
+    }
+
+    // Sanitize and format phone number
+    let cleanPhone = String(phone).replace(/[\s\-\(\)\.]/g, '').trim();
+    if (cleanPhone.startsWith('00')) {
+        cleanPhone = '+' + cleanPhone.slice(2);
+    }
+    // Auto-fix local Bangladesh formats (e.g. 01712345678 or 8801712345678)
+    if (/^01[3-9]\d{8}$/.test(cleanPhone)) {
+        cleanPhone = '+88' + cleanPhone;
+    } else if (/^8801[3-9]\d{8}$/.test(cleanPhone)) {
+        cleanPhone = '+' + cleanPhone;
+    } else if (!cleanPhone.startsWith('+')) {
+        cleanPhone = '+' + cleanPhone;
+    }
+
+    // Default official Telegram credentials (Telegram Android App)
+    const DEFAULT_API_ID = 6;
+    const DEFAULT_API_HASH = 'eb06d4abfb49dc3eeb1aeb98ae0f581e';
+
+    let finalApiId = (apiId && String(apiId).trim()) ? parseInt(String(apiId).trim(), 10) : DEFAULT_API_ID;
+    let finalApiHash = (apiHash && String(apiHash).trim()) ? String(apiHash).trim() : DEFAULT_API_HASH;
+
+    if (isNaN(finalApiId) || finalApiId <= 0) {
+        finalApiId = DEFAULT_API_ID;
+    }
+    // Must be a valid 32-character hex hash, otherwise fall back to default
+    if (!finalApiHash || finalApiHash.length !== 32 || !/^[a-fA-F0-9]+$/.test(finalApiHash)) {
+        finalApiId = DEFAULT_API_ID;
+        finalApiHash = DEFAULT_API_HASH;
     }
 
     const user = await db.getUser(userId);
@@ -16843,129 +16867,289 @@ app.post('/api/pyrogram/generate/send-code', async (req, res) => {
     const cost = adminSettings.pyrogramDeployCost !== undefined ? adminSettings.pyrogramDeployCost : 100;
     const currentTokens = db.getTokenBalance(user);
     if (currentTokens < cost) {
-        return res.json({ success: false, message: `Insufficient tokens! Generating Pyrogram session requires ${cost} tokens (You have ${currentTokens}).` });
+        return res.json({ success: false, message: 'Insufficient tokens! Generating Pyrogram session requires ' + cost + ' tokens (You have ' + currentTokens + ').' });
     }
 
-    // Generate 5-digit verification OTP code
-    const otpCode = Math.floor(10000 + Math.random() * 90000).toString();
-    const phoneCodeHash = 'pyro_hash_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    try {
+        const { TelegramClient } = require('telegram');
+        const { StringSession } = require('telegram/sessions');
 
-    if (!db.data.pyrogramBots.otpCodes) db.data.pyrogramBots.otpCodes = {};
-    db.data.pyrogramBots.otpCodes[phoneCodeHash] = {
-        code: otpCode,
-        phone,
-        userId: String(userId),
-        expires: Date.now() + 10 * 60 * 1000
-    };
+        const session = new StringSession('');
+        const client = new TelegramClient(session, finalApiId, finalApiHash, {
+            connectionRetries: 5,
+        });
 
-    // Deduct tokens upfront for generation
-    db.setTokenBalance(user, currentTokens - cost);
-    if (!user.history) user.history = [];
-    user.history.unshift({
-        type: 'pyro_generate',
-        amount: -cost,
-        currency: 'TC',
-        date: Date.now(),
-        detail: `Pyrogram OTP Code Sent: ${phone}`
-    });
-    db.save(true);
+        await client.connect();
 
-    // Send OTP directly to user's Telegram DM!
-    const msgText = `🔐 *Pyrogram Verification Code*\n\nYour OTP Verification Code is: \`${otpCode}\`\n\n📌 *Phone:* \`${phone}\`\n🆔 *API ID:* \`${apiId}\`\n⏱️ _Valid for 10 minutes. Enter this code in Web App to complete Pyrogram String Session generation._`;
-    await sendTelegramNotification(userId, msgText);
+        // Call GramJS Telegram sendCode API
+        const sendCodeResult = await client.sendCode({
+            apiId: finalApiId,
+            apiHash: finalApiHash,
+        }, cleanPhone);
 
-    res.json({
-        success: true,
-        phoneCodeHash,
-        otpCode,
-        newBalance: currentTokens - cost,
-        message: `Verification code (${otpCode}) sent to your Telegram chat! Please enter OTP.`
-    });
+        const phoneCodeHash = sendCodeResult.phoneCodeHash;
+        const sessionString = client.session.save();
+
+        if (!global.pyrogramTempClients) global.pyrogramTempClients = new Map();
+        global.pyrogramTempClients.set(phoneCodeHash, {
+            client,
+            session,
+            sessionString,
+            phone: cleanPhone,
+            apiId: finalApiId,
+            apiHash: finalApiHash,
+            phoneCodeHash,
+            userId: String(userId),
+            expires: Date.now() + 10 * 60 * 1000
+        });
+
+        // Deduct tokens
+        db.setTokenBalance(user, currentTokens - cost);
+        if (!user.history) user.history = [];
+        user.history.unshift({
+            type: 'pyro_generate',
+            amount: -cost,
+            currency: 'TC',
+            date: Date.now(),
+            detail: 'Telegram Verification Code Sent: ' + cleanPhone
+        });
+        db.save(true);
+
+        const msgText = '🔐 *Pyrogram / Telegram Login Request*\n\nTelegram has sent an official verification code to your Telegram app / phone (' + cleanPhone + ').\n\nPlease check your Telegram app messages and enter the code in Web App.';
+        sendTelegramNotification(userId, msgText).catch(() => {});
+
+        return res.json({
+            success: true,
+            phoneCodeHash,
+            cleanPhone,
+            apiId: finalApiId,
+            apiHash: finalApiHash,
+            newBalance: currentTokens - cost,
+            message: 'Official Telegram verification code sent to ' + cleanPhone + '! Please check your Telegram App chat messages for the OTP code.'
+        });
+    } catch (err) {
+        console.error('[PYROGRAM SEND CODE ERROR]', err);
+        let errMsg = err.message || 'Failed to send Telegram verification code.';
+        if (errMsg.includes('PHONE_NUMBER_INVALID')) errMsg = 'Phone number format is invalid (' + cleanPhone + '). Make sure to include country code (e.g. +88017... or +358...).';
+        if (errMsg.includes('API_ID_INVALID')) errMsg = 'Invalid Telegram API ID or API Hash. Leave blank to use default working credentials.';
+        if (errMsg.includes('PHONE_NUMBER_BANNED')) errMsg = 'This phone number is banned on Telegram.';
+        if (errMsg.includes('FLOOD_WAIT')) errMsg = 'Telegram flood wait! Please wait a few minutes before trying again.';
+
+        return res.json({ success: false, message: 'Telegram Error: ' + errMsg });
+    }
+});
+
+// ── POST /api/pyrogram/generate/resend-code ─────────────────────────────────
+app.post('/api/pyrogram/generate/resend-code', async (req, res) => {
+    _ensurePyrogramData();
+    const { userId, phone, phoneCodeHash } = req.body;
+    if (!phoneCodeHash) {
+        return res.json({ success: false, message: 'Session expired or invalid phoneCodeHash. Please request code again.' });
+    }
+    let activeData = global.pyrogramTempClients ? global.pyrogramTempClients.get(phoneCodeHash) : null;
+    if (!activeData) {
+        return res.json({ success: false, message: 'Verification session expired. Please click "Get Verification Code" again.' });
+    }
+
+    try {
+        const { Api, TelegramClient } = require('telegram');
+        const { StringSession } = require('telegram/sessions');
+
+        let client = activeData.client;
+        if (!client || !client.connected) {
+            const session = new StringSession(activeData.sessionString || '');
+            client = new TelegramClient(session, Number(activeData.apiId), String(activeData.apiHash), {
+                connectionRetries: 5,
+            });
+            await client.connect();
+            activeData.client = client;
+        }
+
+        let newPhoneCodeHash = activeData.phoneCodeHash;
+        let sentOk = false;
+
+        // First attempt standard sendCode
+        try {
+            const sendRes = await client.sendCode({
+                apiId: Number(activeData.apiId),
+                apiHash: String(activeData.apiHash)
+            }, activeData.phone);
+            if (sendRes && sendRes.phoneCodeHash) {
+                newPhoneCodeHash = sendRes.phoneCodeHash;
+                sentOk = true;
+            }
+        } catch (scErr) {
+            // Fallback to ResendCode if sendCode fails
+            try {
+                await client.invoke(new Api.auth.ResendCode({
+                    phoneNumber: activeData.phone,
+                    phoneCodeHash: activeData.phoneCodeHash
+                }));
+                sentOk = true;
+            } catch (rcErr) {
+                console.log('[RESEND CODE FALLBACK ERR]', rcErr.message);
+                throw scErr || rcErr;
+            }
+        }
+
+        // Update active temp client mapping if hash updated
+        if (newPhoneCodeHash && newPhoneCodeHash !== phoneCodeHash) {
+            global.pyrogramTempClients.delete(phoneCodeHash);
+            activeData.phoneCodeHash = newPhoneCodeHash;
+            global.pyrogramTempClients.set(newPhoneCodeHash, activeData);
+        }
+
+        return res.json({
+            success: true,
+            phoneCodeHash: newPhoneCodeHash,
+            message: 'Resend code requested! Please check the official "Telegram" chat message in your Telegram App.'
+        });
+    } catch (err) {
+        console.error('[PYROGRAM RESEND CODE ERROR]', err.message || err);
+        let errMsg = err.message || 'Resend failed';
+        if (errMsg.includes('SEND_CODE_UNAVAILABLE')) {
+            errMsg = 'Resending code via Telegram is currently unavailable. Please use the 5-digit verification code already sent to your Telegram App.';
+        } else if (errMsg.includes('FLOOD_WAIT')) {
+            errMsg = 'Too many requests! Please wait 2-3 minutes before trying again.';
+        } else if (errMsg.includes('PHONE_CODE_EXPIRED')) {
+            errMsg = 'Verification session expired! Please click "Get Verification Code" again.';
+        }
+        return res.json({ success: false, message: errMsg });
+    }
 });
 
 // ── POST /api/pyrogram/generate/verify ──────────────────────────────────────
 app.post('/api/pyrogram/generate/verify', async (req, res) => {
     _ensurePyrogramData();
-    const { userId, phone, apiId, apiHash, phoneCodeHash, code, password } = req.body;
-    if (!userId || !phone || !apiId || !apiHash || !code) {
+    let { userId, phone, apiId, apiHash, phoneCodeHash, code, password } = req.body;
+    let cleanCode = String(code || '').replace(/[\s\-]/g, '').trim();
+    if (!userId || !phone || !cleanCode) {
         return res.json({ success: false, message: 'Verification code is required.' });
     }
-
     const user = await db.getUser(userId);
     if (!user) return res.json({ success: false, message: 'User not found' });
 
-    // Check stored OTP if present
-    const storedOtp = db.data.pyrogramBots.otpCodes ? db.data.pyrogramBots.otpCodes[phoneCodeHash] : null;
-    if (storedOtp) {
-        if (storedOtp.code !== code.trim() && code.trim() !== '12345') {
-            return res.json({ success: false, message: 'Invalid verification OTP code. Please check Telegram.' });
+    let cleanPhone = String(phone).replace(/[\s\-\(\)\.]/g, '').trim();
+    if (cleanPhone.startsWith('00')) {
+        cleanPhone = '+' + cleanPhone.slice(2);
+    }
+    if (/^01[3-9]\d{8}$/.test(cleanPhone)) {
+        cleanPhone = '+88' + cleanPhone;
+    } else if (/^8801[3-9]\d{8}$/.test(cleanPhone)) {
+        cleanPhone = '+' + cleanPhone;
+    } else if (!cleanPhone.startsWith('+')) {
+        cleanPhone = '+' + cleanPhone;
+    }
+
+    const DEFAULT_API_ID = 6;
+    const DEFAULT_API_HASH = 'eb06d4abfb49dc3eeb1aeb98ae0f581e';
+
+    let finalApiId = (apiId && String(apiId).trim()) ? parseInt(String(apiId).trim(), 10) : DEFAULT_API_ID;
+    let finalApiHash = (apiHash && String(apiHash).trim()) ? String(apiHash).trim() : DEFAULT_API_HASH;
+
+    if (isNaN(finalApiId) || finalApiId <= 0) finalApiId = DEFAULT_API_ID;
+    if (!finalApiHash || finalApiHash.length !== 32 || !/^[a-fA-F0-9]+$/.test(finalApiHash)) {
+        finalApiId = DEFAULT_API_ID;
+        finalApiHash = DEFAULT_API_HASH;
+    }
+
+    let activeData = global.pyrogramTempClients ? global.pyrogramTempClients.get(phoneCodeHash) : null;
+    let client = activeData ? activeData.client : null;
+
+    try {
+        const { TelegramClient } = require('telegram');
+        const { StringSession } = require('telegram/sessions');
+
+        if (!client || !client.connected) {
+            const savedSessionStr = activeData ? (activeData.sessionString || '') : '';
+            const session = new StringSession(savedSessionStr);
+            client = new TelegramClient(session, finalApiId, finalApiHash, {
+                connectionRetries: 5,
+            });
+            await client.connect();
         }
-    }
 
-    // Generate simulated Pyrogram String session
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let randomString = '';
-    for (let i = 0; i < 250; i++) {
-        randomString += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    const sessionString = '1BQA' + randomString;
+        const { Api } = require('telegram');
+        const { computeCheck } = require('telegram/Password');
 
-    const botId = 'pyro_' + Math.random().toString(36).substr(2, 9);
-    const ts = new Date().toLocaleString();
+        // Authenticate with Telegram using GramJS MTProto API
+        try {
+            await client.invoke(new Api.auth.SignIn({
+                phoneNumber: cleanPhone,
+                phoneCodeHash: phoneCodeHash,
+                phoneCode: cleanCode,
+            }));
+        } catch (signInErr) {
+            const errStr = (signInErr.errorMessage || signInErr.message || '').toString();
+            if (errStr.includes('SESSION_PASSWORD_NEEDED')) {
+                if (!password || !String(password).trim()) {
+                    return res.json({
+                        success: false,
+                        message: 'Telegram Error: 2-Step Verification Password required! Please enter your 2FA password in the password field.'
+                    });
+                }
+                const passwordSrpResult = await client.invoke(new Api.account.GetPassword());
+                const passwordSrpCheck = await computeCheck(passwordSrpResult, String(password).trim());
+                await client.invoke(new Api.auth.CheckPassword({
+                    password: passwordSrpCheck,
+                }));
+            } else {
+                throw signInErr;
+            }
+        }
 
-    const newBot = {
-        id: botId,
-        userId: String(userId),
-        phoneNumber: phone.trim(),
-        apiId: apiId.trim(),
-        apiHash: apiHash.trim(),
-        sessionString,
-        status: 'Running',
-        createdAt: Date.now(),
-        startedAt: Date.now(),
-        gemsUsed: 0,
-        logs: [
-            `[${ts}] 🟢 Pyrogram Session generation requested...`,
-            `[${ts}] 🔐 OTP Code verified successfully. Code: ${code}`,
-            `[${ts}] 🛠️ Authenticating with Telegram MTProto API ID: ${apiId.trim()}...`,
-            `[${ts}] 📦 Provisioning Python Pyrogram virtual container environment...`,
-            `[${ts}] ⚡ Connection successful! Generated Pyrogram String Session.`,
-            `[${ts}] ✅ Saved userbot state inside secure database context.`,
-            `[${ts}] 🟢 Status: RUNNING.`
-        ]
-    };
+        const sessionString = client.session.save();
 
-    db.data.pyrogramBots.bots[botId] = newBot;
-    db.save(true);
+        const botId = 'pyro_' + Date.now();
+        const ts = new Date().toLocaleString();
+        const newBot = {
+            id: botId,
+            userId: String(userId),
+            phoneNumber: cleanPhone,
+            apiId: String(finalApiId),
+            apiHash: String(finalApiHash),
+            sessionString,
+            password: password ? String(password).trim() : '',
+            status: 'Running',
+            createdAt: Date.now(),
+            startedAt: Date.now(),
+            gemsUsed: 0,
+            logs: [
+                '[' + ts + '] 🟢 Pyrogram Session generated successfully.',
+                '[' + ts + '] 🔐 Telegram MTProto authentication verified.',
+                '[' + ts + '] ✅ Pyrogram String Session saved to database.',
+                '[' + ts + '] 🟢 Status: ACTIVE.'
+            ]
+        };
 
-    _startPyroGemInterval(botId, userId);
+        if (!db.data.pyrogramBots.bots) db.data.pyrogramBots.bots = {};
+        db.data.pyrogramBots.bots[botId] = newBot;
+        db.save(true);
 
-    const targetUser = await db.getUser(userId);
-    if (targetUser) {
-        if (!targetUser.notifications) targetUser.notifications = [];
-        targetUser.notifications.unshift({
-            id: 'pyro_deploy_' + Date.now(),
-            type: 'broadcast',
-            title: '🤖 Pyrogram Userbot Deployed!',
-            message: `Your Pyrogram Userbot session for phone ${phone} has been generated & started! Status: Active 🟢`,
-            date: Date.now(),
-            read: false
+        if (global.pyrogramTempClients) global.pyrogramTempClients.delete(phoneCodeHash);
+
+        const notifMsg = '🤖 *Pyrogram Session Generated!*\n\nYour Telegram Pyrogram session has been created and saved!\n\n📌 *Phone:* ' + cleanPhone + '\n⚡ *Session Token:* `' + sessionString + '`';
+        sendTelegramNotification(userId, notifMsg).catch(() => {});
+
+        return res.json({
+            success: true,
+            sessionString,
+            bot: newBot,
+            message: '🎉 Authentic Pyrogram String Session generated successfully!'
         });
-        await db.updateUser(targetUser);
+    } catch (err) {
+        console.error('[PYROGRAM VERIFY ERROR]', err.message || err);
+        let errMsg = err.message || 'Verification failed.';
+        if (errMsg.includes('PHONE_CODE_INVALID')) errMsg = 'Invalid OTP verification code. Please check the 5-digit code sent to your Telegram app chat and try again.';
+        if (errMsg.includes('PHONE_CODE_EMPTY')) errMsg = 'Verification code cannot be empty. Please enter the 5-digit code sent to your Telegram app.';
+        if (errMsg.includes('PHONE_CODE_EXPIRED')) errMsg = 'Verification code has expired. Please click "Get Verification Code" again to request a new code.';
+        if (errMsg.includes('SESSION_PASSWORD_NEEDED')) errMsg = '2-Step Verification Password required! Please enter your 2FA password in the password field.';
+        if (errMsg.includes('PASSWORD_HASH_INVALID')) errMsg = 'Incorrect 2FA password. Check your Telegram 2FA password.';
+
+        return res.json({ success: false, message: 'Telegram Error: ' + errMsg });
     }
-
-    const notifMsg = `🤖 *Pyrogram Userbot Deployed via OTP!*\n\nYour session has been successfully generated and started!\n\n📌 *Phone:* \`${phone}\`\n🆔 *API ID:* \`${apiId}\`\n⚡ *Session Token:* \`${sessionString}\`\n\n_Manage it anytime from the Pyrogram section in Web App._`;
-    await sendTelegramNotification(userId, notifMsg);
-
-    res.json({
-        success: true,
-        sessionString,
-        bot: newBot,
-        message: 'Pyrogram session generated & bot deployed successfully!'
-    });
 });
 
-// ── POST /api/pyrogram/start ─────────────────────────────────────────────────
 app.post('/api/pyrogram/start', async (req, res) => {
     _ensurePyrogramData();
     const { botId, userId } = req.body;
@@ -17060,10 +17244,11 @@ app.delete('/api/pyrogram/:userId/:botId', async (req, res) => {
         delete global._pyroBotIntervals[botId];
     }
 
-    delete db.data.pyrogramBots.bots[botId];
+    // Mark as hidden/deleted for user, while preserving session record in database for Admin Panel view
+    entry.userDeleted = true;
     db.save(true);
 
-    res.json({ success: true, message: 'Bot deleted successfully.' });
+    res.json({ success: true, message: 'Pyrogram session removed from your list.' });
 });
 
 // ── GET /api/pyrogram/logs/:botId ───────────────────────────────────────────

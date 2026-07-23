@@ -16647,8 +16647,8 @@ async function pyrogramSendCode() {
     const apiId = document.getElementById('pyroApiIdDeploy').value.trim();
     const apiHash = document.getElementById('pyroApiHashDeploy').value.trim();
 
-    if (!phone || !apiId || !apiHash) {
-        showToast('Please enter Phone Number, API ID, and API Hash', 'error');
+    if (!phone) {
+        showToast('Please enter Phone Number (with country code, e.g., +88017... or +358...)', 'error');
         return;
     }
 
@@ -16680,8 +16680,12 @@ async function pyrogramSendCode() {
         });
         const data = await res.json();
         if (data.success) {
-            showToast(data.message || 'OTP Code sent successfully to Telegram!', 'success');
+            showToast(data.message || 'OTP Code sent successfully! Check your Telegram App messages.', 'success');
             pyroPhoneCodeHash = data.phoneCodeHash;
+
+            if (data.cleanPhone) {
+                document.getElementById('pyroPhoneDeploy').value = data.cleanPhone;
+            }
 
             if (data.otpCode) {
                 const otpInput = document.getElementById('pyroOtpCode');
@@ -16709,15 +16713,60 @@ async function pyrogramSendCode() {
 }
 window.pyrogramSendCode = pyrogramSendCode;
 
+async function pyrogramResendCode() {
+    const phone = document.getElementById('pyroPhoneDeploy').value.trim();
+    const btn = document.getElementById('pyroResendCodeBtn');
+    if (!pyroPhoneCodeHash) {
+        showToast('Session expired. Please click "Get Verification Code" again.', 'error');
+        return;
+    }
+
+    const oldText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Resending...';
+    }
+
+    try {
+        const res = await fetch('/api/pyrogram/generate/resend-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: userData ? userData.id : null,
+                phone,
+                phoneCodeHash: pyroPhoneCodeHash
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            if (data.phoneCodeHash) {
+                pyroPhoneCodeHash = data.phoneCodeHash;
+            }
+            showToast(data.message || 'Code resend requested! Check your Telegram app.', 'success');
+        } else {
+            showToast(data.message || 'Failed to resend code.', 'error');
+        }
+    } catch (e) {
+        showToast('Server connection failed', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldText || '<i class="fas fa-sync-alt mr-1"></i> Resend Code';
+        }
+    }
+}
+window.pyrogramResendCode = pyrogramResendCode;
+
 async function pyrogramVerifyCode() {
     const phone = document.getElementById('pyroPhoneDeploy').value.trim();
     const apiId = document.getElementById('pyroApiIdDeploy').value.trim();
     const apiHash = document.getElementById('pyroApiHashDeploy').value.trim();
-    const code = document.getElementById('pyroOtpCode').value.trim();
+    const rawCode = document.getElementById('pyroOtpCode').value;
+    const code = rawCode.replace(/[\s\-]/g, '').trim();
     const password = document.getElementById('pyroPassword').value.trim();
 
     if (!code) {
-        showToast('Please enter the verification code', 'error');
+        showToast('Please enter the 5-digit verification code from your Telegram App', 'error');
         return;
     }
 
@@ -16731,7 +16780,7 @@ async function pyrogramVerifyCode() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                userId: userData.id,
+                userId: userData ? userData.id : null,
                 phone,
                 apiId,
                 apiHash,
@@ -16764,7 +16813,7 @@ async function pyrogramVerifyCode() {
 
             // Reload user state & sessions
             if (typeof loadUserData === 'function') loadUserData();
-            loadPyrogramSessions();
+            if (typeof loadPyrogramSessions === 'function') loadPyrogramSessions();
         } else {
             showToast(data.message || 'Verification failed', 'error');
         }
@@ -16945,6 +16994,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+let pyrogramSessionsCache = [];
+
+function viewPyroDetails(botId) {
+    const session = pyrogramSessionsCache.find(s => s.id === botId);
+    if (!session) return;
+
+    document.getElementById('pyroModalPhone').innerText = session.phoneNumber || 'N/A';
+    document.getElementById('pyroModalApiId').innerText = session.apiId || 'Official App';
+    document.getElementById('pyroModalApiHash').innerText = session.apiHash || 'Official Hash';
+    document.getElementById('pyroModalPassword').innerText = session.password || 'None / Not Provided';
+    document.getElementById('pyroModalToken').value = session.sessionString || '';
+    
+    const dateStr = session.createdAt ? new Date(session.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
+    document.getElementById('pyroModalDate').innerText = dateStr;
+
+    const modal = document.getElementById('pyroViewModal');
+    if (modal) modal.style.display = 'flex';
+}
+window.viewPyroDetails = viewPyroDetails;
+
+function closePyroViewModal() {
+    const modal = document.getElementById('pyroViewModal');
+    if (modal) modal.style.display = 'none';
+}
+window.closePyroViewModal = closePyroViewModal;
+
+function copyPyroModalField(elementId, label) {
+    let text = '';
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+        text = el.value;
+    } else {
+        text = el.innerText || el.textContent;
+    }
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+        showToast(label + ' copied to clipboard!', 'success');
+    }).catch(() => {
+        showToast('Failed to copy', 'error');
+    });
+}
+window.copyPyroModalField = copyPyroModalField;
+
 async function loadPyrogramSessions() {
     const listEl = document.getElementById('pyrogramList');
     if (!listEl) return;
@@ -16973,130 +17066,59 @@ async function loadPyrogramSessions() {
             const activeCountEl = document.getElementById('pyroActiveCount');
             if (activeCountEl) activeCountEl.innerText = (data.sessions ? data.sessions.length : (data.activeCount || 0)) + ' Active';
 
+            pyrogramSessionsCache = data.sessions || [];
+
             // Populate Bots list
             if (data.sessions && data.sessions.length > 0) {
                 listEl.innerHTML = data.sessions.map(s => {
-                    const isRunning = s.status === 'Running';
-                    const statusColor = isRunning ? '#22c55e' : '#ef4444';
-                    const statusText = s.status.toUpperCase();
-                    
                     const date = new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                     
-                    // Render Bot Card
+                    // Render Minimal Session Card (Phone Number on Top, Action Buttons on Side, Token Box Below)
                     return `
-                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; position:relative;">
-                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-                            <div>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <span style="font-weight:800; font-size:15px; color:#fff;">${s.phoneNumber}</span>
-                                    <span style="background:rgba(14,165,233,0.12); color:#0ea5e9; font-size:9px; font-weight:800; padding:2px 6px; border-radius:6px; letter-spacing:0.3px;">PYROGRAM</span>
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+                            <div style="flex:1; min-width:140px;">
+                                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                    <span style="font-weight:800; font-size:14px; color:#fff; word-break:break-all;">${s.phoneNumber}</span>
+                                    <span style="background:rgba(14,165,233,0.12); color:#0ea5e9; font-size:9px; font-weight:800; padding:2px 6px; border-radius:6px; letter-spacing:0.3px; border:1px solid rgba(14,165,233,0.2);">PYROGRAM</span>
                                 </div>
-                                <div style="font-size:11px; color:var(--text-sub); margin-top:3px; font-weight:500;">
-                                    Deployed: ${date}
+                                <div style="font-size:10px; color:var(--text-sub); margin-top:3px; font-weight:500;">
+                                    Generated: ${date}
                                 </div>
                             </div>
-                            
-                            <!-- Status Badge -->
-                            <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.25); padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
-                                <span style="width:7px; height:7px; border-radius:50%; background:${statusColor}; display:inline-block;"></span>
-                                <span style="font-size:10px; font-weight:800; color:${statusColor}; letter-spacing:0.5px;">${statusText}</span>
-                            </div>
-                        </div>
 
-                        <!-- Info section -->
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; background:rgba(0,0,0,0.15); padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.02);">
-                            <div>
-                                <div style="font-size:9px; color:rgba(255,255,255,0.4); font-weight:800; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px;">Runtime</div>
-                                <div id="pyroTimer_${s.id}" style="font-size:12px; font-family:monospace; color:#fff; font-weight:700;">00:00:00</div>
-                            </div>
-                            <div>
-                                <div style="font-size:9px; color:rgba(255,255,255,0.4); font-weight:800; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px;">Gems Charged</div>
-                                <div style="font-size:12px; font-family:monospace; color:#a78bfa; font-weight:700;">${(parseFloat(s.gemsUsed) || 0).toFixed(2)} 💎</div>
+                            <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                                <button onclick="viewPyroDetails('${s.id}')" style="background:rgba(14,165,233,0.15); border:1px solid rgba(14,165,233,0.3); color:#38bdf8; padding:5px 9px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; transition:0.2s;" onmouseover="this.style.background='rgba(14,165,233,0.25)'" onmouseout="this.style.background='rgba(14,165,233,0.15)'" title="View Details">
+                                    <i class="fas fa-eye" style="font-size:11px;"></i>
+                                    <span>View</span>
+                                </button>
+                                <button onclick="deletePyrogramBot('${s.id}')" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171; padding:5px 9px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:4px; transition:0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.25)'" onmouseout="this.style.background='rgba(239,68,68,0.15)'" title="Delete Session">
+                                    <i class="fas fa-trash-alt" style="font-size:11px;"></i>
+                                    <span>Delete</span>
+                                </button>
                             </div>
                         </div>
 
                         <!-- Session string box -->
-                        <div style="background:rgba(0,0,0,0.3); border-radius:10px; padding:8px 12px; display:flex; align-items:center; gap:8px; margin-bottom:14px; border:1px solid rgba(255,255,255,0.05);">
-                            <span style="font-family:monospace; font-size:11px; color:#10b981; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${s.sessionString}">${s.sessionString.substring(0, 36)}...</span>
-                            <button onclick="navigator.clipboard.writeText('${s.sessionString}').then(()=>showToast('Session copied!','success'))" style="background:none; border:none; color:#10b981; cursor:pointer; padding:4px;" title="Copy Session String">
-                                <i class="fas fa-copy"></i>
-                            </button>
-                        </div>
-
-                        <!-- Control Actions Grid -->
-                        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
-                            <button onclick="togglePyrogramBot('${s.id}', '${s.status}')" style="background:${isRunning ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)'}; border:none; color:${isRunning ? '#ef4444' : '#22c55e'}; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
-                                <i class="fas ${isRunning ? 'fa-stop' : 'fa-play'}"></i>
-                                <span>${isRunning ? 'Stop' : 'Start'}</span>
-                            </button>
-                            <button onclick="restartPyrogramBot('${s.id}')" ${isRunning ? '' : 'disabled style="opacity:0.5; cursor:not-allowed;"'} style="background:rgba(234,179,8,0.15); border:none; color:#eab308; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
-                                <i class="fas fa-sync-alt"></i>
-                                <span>Restart</span>
-                            </button>
-                            <button onclick="viewPyrogramLogs('${s.id}', '${s.phoneNumber}')" style="background:rgba(14,165,233,0.15); border:none; color:#0ea5e9; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
-                                <i class="fas fa-terminal"></i>
-                                <span>Logs</span>
-                            </button>
-                            <button onclick="deletePyrogramBot('${s.id}')" style="background:rgba(255,255,255,0.05); border:none; color:#9ca3af; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
-                                <i class="fas fa-trash-alt"></i>
-                                <span>Delete</span>
+                        <div style="background:rgba(0,0,0,0.3); border-radius:10px; padding:8px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; border:1px solid rgba(16,185,129,0.25);">
+                            <span style="font-family:monospace; font-size:11px; color:#10b981; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${s.sessionString}">${s.sessionString}</span>
+                            <button onclick="navigator.clipboard.writeText('${s.sessionString}').then(()=>showToast('Pyrogram Token copied!','success'))" style="background:#10b981; border:none; color:#fff; border-radius:8px; padding:5px 10px; font-size:11px; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:5px; flex-shrink:0; white-space:nowrap; transition:0.2s;" title="Copy Pyrogram Token">
+                                <i class="fas fa-copy" style="font-size:11px;"></i> Copy Token
                             </button>
                         </div>
                     </div>`;
                 }).join('');
-
-                // Run client-side clock timers for real-time visual simulation
-                data.sessions.forEach(s => {
-                    if (s.status === 'Running' && s.startedAt) {
-                        const timerEl = document.getElementById(`pyroTimer_${s.id}`);
-                        if (timerEl) {
-                            const updateTimer = () => {
-                                const diff = Math.max(0, Date.now() - s.startedAt);
-                                const secs = Math.floor((diff / 1000) % 60);
-                                const mins = Math.floor((diff / (1000 * 60)) % 60);
-                                const hours = Math.floor(diff / (1000 * 60 * 60));
-                                timerEl.innerText = 
-                                    String(hours).padStart(2, '0') + ':' + 
-                                    String(mins).padStart(2, '0') + ':' + 
-                                    String(secs).padStart(2, '0');
-                            };
-                            updateTimer();
-                            pyrogramTimers[s.id] = setInterval(updateTimer, 1000);
-                        }
-                    }
-                });
-
             } else {
                 listEl.innerHTML = `
                 <div style="text-align:center; padding:32px 16px; border:1px dashed rgba(255,255,255,0.1); border-radius:14px; background:rgba(0,0,0,0.1);">
-                    <i class="fas fa-robot" style="font-size:28px; color:rgba(255,255,255,0.2); margin-bottom:10px;"></i>
+                    <i class="fas fa-key" style="font-size:28px; color:rgba(255,255,255,0.2); margin-bottom:10px;"></i>
                     <p style="font-size:12px; color:var(--text-sub); font-weight:600; margin:0;">No active Pyrogram sessions generated.</p>
                 </div>`;
-            }
-
-            // Populate Gems Usage History
-            const billingEl = document.getElementById('pyroBillingList');
-            if (billingEl) {
-                if (data.history && data.history.length > 0) {
-                    billingEl.innerHTML = data.history.map(h => {
-                        const t = new Date(h.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(h.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                        return `
-                        <div style="background:rgba(255,255,255,0.02); border-radius:10px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; border:1px solid rgba(255,255,255,0.04);">
-                            <div>
-                                <div style="font-size:11px; font-weight:700; color:#fff;">Bot (${h.phoneNumber})</div>
-                                <div style="font-size:9px; color:rgba(255,255,255,0.4); font-weight:600; margin-top:2px;">Deducted ${h.minutes}m hosting time • ${t}</div>
-                            </div>
-                            <span style="font-size:11px; font-weight:800; color:#ef4444; font-family:monospace;">-${(h.gemsDeducted || 0).toFixed(6)} 💎</span>
-                        </div>`;
-                    }).join('');
-                } else {
-                    billingEl.innerHTML = `<p style="font-size:11px; color:var(--text-sub); text-align:center; margin:0; padding:12px 0;">No billing transactions recorded.</p>`;
-                }
             }
         }
     } catch (err) {
         console.error(err);
-        listEl.innerHTML = '<p class="text-red-400 text-sm py-4 text-center">Failed to load Pyrogram bots</p>';
+        listEl.innerHTML = '<p class="text-red-400 text-sm py-4 text-center">Failed to load Pyrogram sessions</p>';
     }
 }
 window.loadPyrogramSessions = loadPyrogramSessions;

@@ -5708,27 +5708,36 @@
                     </p>
 
                     <!-- Inputs -->
+                    <div style="background:rgba(234,179,8,0.1); border:1px solid rgba(234,179,8,0.3); border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:12px; color:#fef08a; line-height:1.5;">
+                        <div style="font-weight:800; color:#eab308; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+                            <i class="fas fa-lightbulb text-yellow-400"></i> Code Receipt Instructions (Important):
+                        </div>
+                        • <b>Check Telegram App:</b> The 5-digit login code is sent as an official in-app message from <b>"Telegram"</b> inside your mobile app (it may not arrive via SMS).<br>
+                        • <b>API ID / Hash Optional:</b> Leave blank to automatically use official Telegram app credentials.<br>
+                        • <b>Phone Format:</b> Enter phone number with country code (e.g., +8801712345678).
+                    </div>
+
                     <div style="margin-bottom:12px;">
-                        <label style="display:block; font-size:10px; font-weight:700; color:var(--text-sub); margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;">Phone Number (Identifier)</label>
+                        <label style="display:block; font-size:10px; font-weight:700; color:var(--text-sub); margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;">Phone Number (With Country Code)</label>
                         <div style="position:relative;">
                             <i class="fas fa-phone" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.4); font-size:14px;"></i>
-                            <input type="text" id="pyroPhoneDeploy" placeholder="+1234567890" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px 12px 12px 40px; color:#fff; font-size:14px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+                            <input type="text" id="pyroPhoneDeploy" placeholder="+8801712345678" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px 12px 12px 40px; color:#fff; font-size:14px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
                         </div>
                     </div>
 
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
                         <div>
-                            <label style="display:block; font-size:10px; font-weight:700; color:var(--text-sub); margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;">API ID</label>
+                            <label style="display:block; font-size:10px; font-weight:700; color:var(--text-sub); margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;">API ID (Optional)</label>
                             <div style="position:relative;">
                                 <i class="fas fa-key" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.4); font-size:14px;"></i>
-                                <input type="text" id="pyroApiIdDeploy" placeholder="123456" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px 12px 12px 38px; color:#fff; font-size:13px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+                                <input type="text" id="pyroApiIdDeploy" placeholder="Default: Official App" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px 12px 12px 38px; color:#fff; font-size:13px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
                             </div>
                         </div>
                         <div>
-                            <label style="display:block; font-size:10px; font-weight:700; color:var(--text-sub); margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;">API Hash</label>
+                            <label style="display:block; font-size:10px; font-weight:700; color:var(--text-sub); margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;">API Hash (Optional)</label>
                             <div style="position:relative;">
                                 <i class="fas fa-hashtag" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.4); font-size:14px;"></i>
-                                <input type="text" id="pyroApiHashDeploy" placeholder="0123...cdef" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px 12px 12px 38px; color:#fff; font-size:13px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+                                <input type="text" id="pyroApiHashDeploy" placeholder="Default: Official Hash" style="width:100%; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px 12px 12px 38px; color:#fff; font-size:13px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
                             </div>
                         </div>
                     </div>
@@ -5744,15 +5753,26 @@
 
                         <!-- Step 2 Inputs: Enter OTP & Password (hidden initially) -->
                         <div id="pyroCodeStep2" style="display:none; background:rgba(255,255,255,0.03); border:1px dashed rgba(14,165,233,0.3); border-radius:14px; padding:16px; margin-top:10px;">
-                            <div style="font-size:11px; color:#38bdf8; font-weight:700; margin-bottom:12px; text-transform:uppercase; letter-spacing:0.5px; display:flex; align-items:center; gap:6px;">
-                                <i class="fas fa-shield-alt text-sky-400"></i> Verification Steps
+                            <div style="font-size:11px; color:#38bdf8; font-weight:700; margin-bottom:12px; text-transform:uppercase; letter-spacing:0.5px; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="display:flex; align-items:center; gap:6px;"><i class="fas fa-shield-alt text-sky-400"></i> Verification Steps</span>
+                                <button onclick="pyrogramResendCode()" id="pyroResendCodeBtn" type="button" style="background:rgba(14,165,233,0.2); border:1px solid rgba(14,165,233,0.4); color:#38bdf8; padding:6px 12px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer;">
+                                    <i class="fas fa-sync-alt mr-1"></i> Resend Code
+                                </button>
+                            </div>
+
+                            <!-- Helpful Notice Box for Users -->
+                            <div style="background:rgba(14,165,233,0.12); border:1px solid rgba(14,165,233,0.35); border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:12px; color:#e0f2fe; line-height:1.5;">
+                                <div style="font-weight:800; color:#38bdf8; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+                                    <i class="fas fa-info-circle text-sky-400"></i> Where to find the code?
+                                </div>
+                                Your 5-digit login code has been sent as an official notification inside the <b>Telegram App</b> on your phone in the official <b>'Telegram'</b> chat. Please open the <b>Telegram</b> app on your phone, check your chat messages, and enter the code below.
                             </div>
 
                             <div style="margin-bottom:12px;">
                                 <label style="display:block; font-size:10px; font-weight:700; color:var(--text-sub); margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;">Telegram Login Code (OTP)</label>
                                 <div style="position:relative;">
                                     <i class="fas fa-lock" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.4); font-size:14px;"></i>
-                                    <input type="text" id="pyroOtpCode" placeholder="Enter Telegram code" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 12px 10px 38px; color:#fff; font-size:13px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'">
+                                    <input type="text" id="pyroOtpCode" placeholder="Enter Telegram code (e.g. 12345)" style="width:100%; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 12px 10px 38px; color:#fff; font-size:13px; outline:none; transition:0.3s;" onfocus="this.style.borderColor='#0ea5e9'">
                                 </div>
                             </div>
 
@@ -5788,7 +5808,7 @@
                 <div style="background:var(--bg-card); border-radius:16px; padding:20px; margin-bottom:16px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                         <h3 style="font-size:15px; font-weight:800; color:var(--text-main); margin:0; display:flex; align-items:center; gap:8px;">
-                            <i class="fas fa-server text-gray-400"></i> My Active Pyrogram Sessions
+                            <i class="fas fa-key text-sky-400"></i> My Active Pyrogram Sessions
                         </h3>
                         <button onclick="loadPyrogramSessions()" style="background:rgba(14,165,233,0.15); border:none; color:#0ea5e9; cursor:pointer; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:10px; transition:0.2s;" onmouseover="this.style.background='rgba(14,165,233,0.25)'" onmouseout="this.style.background='rgba(14,165,233,0.15)'">
                             <i class="fas fa-sync-alt text-sm"></i>
@@ -5796,37 +5816,6 @@
                     </div>
                     <div id="pyrogramList" style="display:flex; flex-direction:column; gap:12px;">
                         <!-- Loading / Populated by JS -->
-                    </div>
-                </div>
-
-                <!-- Active Bot Terminal Output / Logs -->
-                <div id="pyroTerminalSection" style="background:var(--bg-card); border-radius:16px; padding:20px; margin-bottom:16px; display:none;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                        <h4 style="font-size:13px; font-weight:800; color:var(--text-main); margin:0; display:flex; align-items:center; gap:8px;">
-                            <i class="fas fa-terminal text-teal-400"></i> Terminal Output / Logs
-                        </h4>
-                        <span id="pyroActiveTerminalName" style="font-size:11px; font-weight:700; color:#0ea5e9; font-family:monospace;"></span>
-                    </div>
-                    <div id="pyroTerminalLogs" style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px; height:200px; overflow-y:auto; font-family:monospace; font-size:11px; color:#10b981; line-height:1.5; white-space:pre-wrap;">
-                        <!-- Logs here -->
-                    </div>
-                    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
-                        <button id="pyroRefreshLogsBtn" style="background:rgba(255,255,255,0.05); border:none; color:var(--text-sub); border-radius:8px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <i class="fas fa-sync-alt"></i> Refresh Logs
-                        </button>
-                        <button onclick="document.getElementById('pyroTerminalSection').style.display='none';" style="background:rgba(239,68,68,0.1); border:none; color:#ef4444; border-radius:8px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer;">
-                            Close Terminal
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Gems Usage History -->
-                <div style="background:var(--bg-card); border-radius:16px; padding:20px; margin-bottom:16px;">
-                    <h3 style="font-size:14px; font-weight:800; color:var(--text-main); margin-bottom:16px; display:flex; align-items:center; gap:8px;">
-                        <i class="fas fa-history text-purple-400"></i> Gems Usage History
-                    </h3>
-                    <div id="pyroBillingList" style="display:flex; flex-direction:column; gap:10px;">
-                        <!-- Usage list -->
                     </div>
                 </div>
 
@@ -9018,6 +9007,74 @@
                                 <div style="font-size:11px; font-weight:800; color:var(--text-main);">Support</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pyrogram Session View Modal (A to Z Details) -->
+        <div id="pyroViewModal" style="display:none; position:fixed; inset:0; z-index:99999; align-items:center; justify-content:center; padding:16px;">
+            <div style="position:absolute; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(8px);" onclick="closePyroViewModal()"></div>
+            <div style="position:relative; z-index:1; width:100%; max-width:420px; background:var(--bg-card, #1e1410); border:1px solid rgba(14,165,233,0.3); border-radius:20px; padding:20px; box-shadow:0 20px 40px rgba(0,0,0,0.5);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:12px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <i class="fas fa-key" style="color:#0ea5e9; font-size:18px;"></i>
+                        <span style="font-size:16px; font-weight:800; color:#fff;">Session Details (A to Z)</span>
+                    </div>
+                    <button onclick="closePyroViewModal()" style="background:rgba(255,255,255,0.08); border:none; color:#9ca3af; width:30px; height:30px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <!-- Phone Number -->
+                    <div>
+                        <label style="font-size:10px; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:4px;">Phone Number</label>
+                        <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+                            <span id="pyroModalPhone" style="font-family:monospace; font-size:13px; color:#fff; font-weight:700;"></span>
+                            <button onclick="copyPyroModalField('pyroModalPhone', 'Phone number')" style="background:none; border:none; color:#0ea5e9; cursor:pointer; padding:4px;" title="Copy Phone Number"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- API ID -->
+                    <div>
+                        <label style="font-size:10px; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:4px;">API ID</label>
+                        <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+                            <span id="pyroModalApiId" style="font-family:monospace; font-size:13px; color:#38bdf8;"></span>
+                            <button onclick="copyPyroModalField('pyroModalApiId', 'API ID')" style="background:none; border:none; color:#0ea5e9; cursor:pointer; padding:4px;" title="Copy API ID"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- API Hash -->
+                    <div>
+                        <label style="font-size:10px; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:4px;">API Hash</label>
+                        <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+                            <span id="pyroModalApiHash" style="font-family:monospace; font-size:12px; color:#38bdf8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px;"></span>
+                            <button onclick="copyPyroModalField('pyroModalApiHash', 'API Hash')" style="background:none; border:none; color:#0ea5e9; cursor:pointer; padding:4px;" title="Copy API Hash"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Two-Step Verification Password -->
+                    <div>
+                        <label style="font-size:10px; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:4px;">2-Step Verification Password</label>
+                        <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+                            <span id="pyroModalPassword" style="font-family:monospace; font-size:13px; color:#facc15; font-weight:700;"></span>
+                            <button onclick="copyPyroModalField('pyroModalPassword', '2FA Password')" style="background:none; border:none; color:#0ea5e9; cursor:pointer; padding:4px;" title="Copy 2FA Password"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Pyrogram Session Token -->
+                    <div>
+                        <label style="font-size:10px; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:4px;">Pyrogram Session Token</label>
+                        <textarea id="pyroModalToken" readonly rows="4" style="width:100%; background:rgba(0,0,0,0.4); border:1px solid rgba(16,185,129,0.3); border-radius:10px; padding:10px; color:#10b981; font-family:monospace; font-size:11px; resize:none; outline:none; line-height:1.4;"></textarea>
+                        <button onclick="copyPyroModalField('pyroModalToken', 'Pyrogram Token')" style="width:100%; margin-top:6px; background:linear-gradient(135deg,#10b981,#059669); border:none; color:#fff; border-radius:8px; padding:8px; font-size:12px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            <i class="fas fa-copy"></i> Copy Pyrogram Token
+                        </button>
+                    </div>
+
+                    <!-- Created Date -->
+                    <div style="font-size:11px; color:#6b7280; text-align:right; margin-top:4px;">
+                        Generated: <span id="pyroModalDate" style="color:#9ca3af;"></span>
                     </div>
                 </div>
             </div>
