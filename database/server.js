@@ -6237,6 +6237,24 @@ app.get('/api/admin/groups', async (req, res) => {
     res.json({ success: true, groups: db.getGroups() });
 });
 
+// API: Admin - Add Group or Channel manually
+app.post('/api/admin/groups/add', (req, res) => {
+    const { id, title, type } = req.body;
+    if (!id) return res.json({ success: false, message: 'Chat ID or Username required' });
+    if (!db.data.groups) db.data.groups = {};
+    const chatId = String(id).trim();
+    db.data.groups[chatId] = {
+        id: chatId,
+        title: title || chatId,
+        type: type || (chatId.startsWith('@') ? 'channel' : 'group'),
+        memberCount: 0,
+        addedAt: Date.now(),
+        lastActive: Date.now()
+    };
+    db.save();
+    res.json({ success: true, groups: db.getGroups() });
+});
+
 // API: Admin - Group Settings (GET)
 app.get('/api/admin/group-settings', (req, res) => {
     const settings = db.getGroupSettings();

@@ -4391,14 +4391,22 @@
                         <!-- Select Group to Stream -->
                         <div class="glass-card p-6 rounded-2xl border border-white/5">
                             <h3 class="font-bold mb-4 flex items-center gap-2">
-                                <i class="fas fa-satellite-dish text-blue-400"></i> Target Stream Group
+                                <i class="fas fa-satellite-dish text-blue-400"></i> Target Stream Group or Channel
                             </h3>
-                            <div class="flex gap-2 mb-4">
+                            <div class="flex gap-2 mb-3">
                                 <select id="stream-group-select" class="flex-1 bg-black/40 border border-white/10 rounded-xl p-3 focus:border-purple-500 outline-none text-sm">
                                     <option value="">Select a Group/Channel...</option>
                                 </select>
-                                <button onclick="refreshStreamGroups()" class="bg-blue-600/20 text-blue-400 px-4 py-2 rounded-xl hover:bg-blue-600/40 transition border border-blue-500/20">
+                                <button onclick="refreshStreamGroups()" class="bg-blue-600/20 text-blue-400 px-4 py-2 rounded-xl hover:bg-blue-600/40 transition border border-blue-500/20" title="Refresh List">
                                     <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
+                            
+                            <!-- Add Custom Channel / Group -->
+                            <div class="flex gap-2 mb-4">
+                                <input type="text" id="new-stream-group-input" placeholder="Enter channel username (@mychannel) or ID..." class="flex-1 bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-purple-500 outline-none font-mono">
+                                <button onclick="addStreamGroup()" class="bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-3 rounded-xl transition text-sm flex items-center gap-2 whitespace-nowrap shadow-lg">
+                                    <i class="fas fa-plus"></i> Add Channel/Group
                                 </button>
                             </div>
                             
@@ -16545,6 +16553,32 @@
             showToast('🔄 Refreshing Group List...');
             loadStreamGroupSelectors();
             setTimeout(() => showToast('✅ Group list refreshed.'), 1000);
+        }
+
+        async function addStreamGroup() {
+            const input = document.getElementById('new-stream-group-input');
+            const chatId = input ? input.value.trim() : '';
+            if (!chatId) {
+                showToast('⚠️ Please enter a Telegram Channel or Group username/ID (e.g. @mychannel)', 'error');
+                return;
+            }
+            try {
+                const res = await fetch('/api/admin/groups/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: chatId, title: chatId, type: chatId.startsWith('@') ? 'channel' : 'group' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('✅ Group/Channel added successfully!');
+                    if (input) input.value = '';
+                    loadStreamGroupSelectors();
+                } else {
+                    showToast('❌ Failed: ' + (data.message || 'Unknown error'), 'error');
+                }
+            } catch (e) {
+                showToast('❌ Network error: ' + e.message, 'error');
+            }
         }
 
         async function startVideoChat() {
