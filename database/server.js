@@ -12828,73 +12828,106 @@ async function startServer() {
 
     // ── Restore gem intervals for running bots after restart ─────────────────
     // When server restarts, in-memory intervals are lost but DB still shows bots as 'running'
-    setTimeout(() => {
+    setTimeout(async () => {
         try {
-            if (!db.data.botHosting || !db.data.botHosting.bots) return;
-            let restored = 0;
-            Object.values(db.data.botHosting.bots).forEach(bot => {
-                if (bot.status === 'running' && bot.userId) {
-                    // Check if user still has gems
-                    const u = db.getUser(bot.userId);
-                    const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.bhGemsPerHour) ? db.data.adminSettings.bhGemsPerHour : 1) || 1;
-                    if (!u || bhGetGems(u) < gph / 60) {
-                        // No gems — mark as stopped
-                        bot.status = 'stopped'; bot.startedAt = null;
-                        console.log(`[BH RESTORE] Bot ${bot.id} stopped — no gems`);
-                    } else {
-                        // Restore gem interval
-                        _startBhGemInterval(bot.id, bot.userId);
-                        restored++;
-                        console.log(`[BH RESTORE] Gem interval restored for bot ${bot.id}`);
+            console.log(`[BOT RESTORE] Starting restoration of active bot intervals...`);
+
+            // 1. Python / Custom Bot Hosting
+            bhInitData();
+            if (db.data.botHosting && db.data.botHosting.bots) {
+                let bhRestored = 0;
+                for (const bot of Object.values(db.data.botHosting.bots)) {
+                    if (bot.status === 'running' && bot.userId) {
+                        const u = await db.getUser(bot.userId);
+                        const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.bhGemsPerHour) ? db.data.adminSettings.bhGemsPerHour : 1) || 1;
+                        if (!u || bhGetGems(u) <= 0) {
+                            bot.status = 'stopped'; bot.startedAt = null;
+                            console.log(`[BH RESTORE] Bot ${bot.id} stopped — no gems`);
+                        } else {
+                            const now = Date.now();
+                            if (bot.lastDeductedAt) {
+                                const elapsedMinutes = Math.floor((now - bot.lastDeductedAt) / (60 * 1000));
+                                if (elapsedMinutes >= 1) {
+                                    const gpm = gph / 60;
+                                    const totalDeduct = Math.min(bhGetGems(u), elapsedMinutes * gpm);
+                                    bhSetGems(u, Math.max(0, bhGetGems(u) - totalDeduct));
+                                    bot.gemsUsed = parseFloat(((bot.gemsUsed || 0) + totalDeduct).toFixed(6));
+                                }
+                            }
+                            bot.lastDeductedAt = now;
+                            _startBhGemInterval(bot.id, bot.userId);
+                            bhRestored++;
+                            console.log(`[BH RESTORE] Gem interval restored for BH bot ${bot.id}`);
+                        }
                     }
                 }
-            });
+                console.log(`[BH RESTORE] ${bhRestored} Python bot interval(s) restored`);
+            }
 
-            // ── Restore gem intervals for Live SMS Bots after restart ─────────────
+            // 2. Live SMS Bots
             _ensureLiveSmsBotData();
             if (db.data.liveSmsBot && db.data.liveSmsBot.bots) {
                 let lsbRestored = 0;
-                Object.values(db.data.liveSmsBot.bots).forEach(bot => {
+                for (const bot of Object.values(db.data.liveSmsBot.bots)) {
                     if (bot.status === 'Running' && bot.userId) {
-                        const u = db.getUser(bot.userId);
+                        const u = await db.getUser(bot.userId);
                         const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.liveSmsBotGemsPerHour) ? db.data.adminSettings.liveSmsBotGemsPerHour : 1) || 1;
-                        if (!u || bhGetGems(u) < gph / 60) {
+                        if (!u || bhGetGems(u) <= 0) {
                             bot.status = 'Stopped'; bot.startedAt = null;
                             console.log(`[LSB RESTORE] Bot ${bot.id} stopped — no gems`);
                         } else {
+                            const now = Date.now();
+                            if (bot.lastDeductedAt) {
+                                const elapsedMinutes = Math.floor((now - bot.lastDeductedAt) / (60 * 1000));
+                                if (elapsedMinutes >= 1) {
+                                    const gpm = gph / 60;
+                                    const totalDeduct = Math.min(bhGetGems(u), elapsedMinutes * gpm);
+                                    bhSetGems(u, Math.max(0, bhGetGems(u) - totalDeduct));
+                                    bot.gemsUsed = parseFloat(((bot.gemsUsed || 0) + totalDeduct).toFixed(6));
+                                }
+                            }
+                            bot.lastDeductedAt = now;
                             _startLsbGemInterval(bot.id, bot.userId);
                             lsbRestored++;
-                            console.log(`[LSB RESTORE] Gem interval restored for bot ${bot.id}`);
+                            console.log(`[LSB RESTORE] Gem interval restored for LSB bot ${bot.id}`);
                         }
                     }
-                });
-                if (lsbRestored > 0) {
-                    db.save();
                 }
+                console.log(`[LSB RESTORE] ${lsbRestored} Live SMS bot interval(s) restored`);
             }
 
-            // ── Restore gem intervals for Pyrogram Bots after restart ─────────────
+            // 3. Pyrogram Bots
             _ensurePyrogramData();
             if (db.data.pyrogramBots && db.data.pyrogramBots.bots) {
                 let pyroRestored = 0;
-                Object.values(db.data.pyrogramBots.bots).forEach(bot => {
+                for (const bot of Object.values(db.data.pyrogramBots.bots)) {
                     if (bot.status === 'Running' && bot.userId) {
-                        const u = db.getUser(bot.userId);
-                        const gph = 1.0; // 1 Gem/hour
-                        if (!u || bhGetGems(u) < gph / 60) {
+                        const u = await db.getUser(bot.userId);
+                        const gph = parseFloat((db.data.adminSettings && db.data.adminSettings.pyrogramGemsPerHour) ? db.data.adminSettings.pyrogramGemsPerHour : 1) || 1;
+                        if (!u || bhGetGems(u) <= 0) {
                             bot.status = 'Stopped'; bot.startedAt = null;
                             console.log(`[PYRO RESTORE] Bot ${bot.id} stopped — no gems`);
                         } else {
+                            const now = Date.now();
+                            if (bot.lastDeductedAt) {
+                                const elapsedMinutes = Math.floor((now - bot.lastDeductedAt) / (60 * 1000));
+                                if (elapsedMinutes >= 1) {
+                                    const gpm = gph / 60;
+                                    const totalDeduct = Math.min(bhGetGems(u), elapsedMinutes * gpm);
+                                    bhSetGems(u, Math.max(0, bhGetGems(u) - totalDeduct));
+                                    bot.gemsUsed = parseFloat(((bot.gemsUsed || 0) + totalDeduct).toFixed(6));
+                                }
+                            }
+                            bot.lastDeductedAt = now;
                             _startPyroGemInterval(bot.id, bot.userId);
                             pyroRestored++;
-                            console.log(`[PYRO RESTORE] Gem interval restored for bot ${bot.id}`);
+                            console.log(`[PYRO RESTORE] Gem interval restored for Pyro bot ${bot.id}`);
                         }
                     }
-                });
-                if (pyroRestored > 0) {
-                    db.save();
                 }
+                console.log(`[PYRO RESTORE] ${pyroRestored} Pyrogram bot interval(s) restored`);
             }
+
             // Auto-fix gem sync for all users on startup
             try {
                 const users = getUsersObj();
@@ -12916,12 +12949,11 @@ async function startServer() {
                 }
             } catch (e) { console.warn('[GEM SYNC] Startup fix error:', e.message); }
 
-            db.save();
-            console.log(`[BH RESTORE] ${restored} bot interval(s) restored after restart`);
+            db.save(true);
         } catch (e) {
-            console.error('[BH RESTORE] Error restoring intervals:', e.message);
+            console.error('[BOT RESTORE ERROR]', e.message);
         }
-    }, 3000); // Wait 3s for DB to fully load
+    }, 1500);
 
     console.log(`[DEBUG] Attempting to start server on PORT: ${PORT}`);
     try {

@@ -16812,10 +16812,11 @@
                 const servers = data.servers || [];
 
                 // Stats
+                const bhGemsSum = bots.reduce((s, b) => s + (parseFloat(b.gemsUsed) || 0), 0);
                 document.getElementById('hst-total').textContent = bots.length;
                 document.getElementById('hst-running').textContent = bots.filter(b => b.status === 'running').length;
                 document.getElementById('hst-stopped').textContent = bots.filter(b => b.status !== 'running').length;
-                document.getElementById('hst-gems-used').textContent = bots.reduce((s, b) => s + (b.gemsUsed || 0), 0);
+                document.getElementById('hst-gems-used').textContent = bhGemsSum.toFixed(2);
 
                 // API Config
                 if (data.apiConfig) {
@@ -16886,7 +16887,7 @@
                     </td>
                     <td class="p-3"><span class="${statusColor} text-sm font-bold"><i class="fas ${statusIcon} mr-1"></i>${b.status}${b.adminLocked ? ' 🔒' : ''}</span></td>
                     <td class="p-3 text-sm text-gray-300">${runtime}</td>
-                    <td class="p-3 text-sm text-yellow-400">${b.gemsUsed || 0} 💎</td>
+                    <td class="p-3 text-sm text-yellow-400 font-semibold">${(parseFloat(b.gemsUsed) || 0).toFixed(2)} 💎</td>
                     <td class="p-3 text-xs text-gray-400">${new Date(b.uploadedAt).toLocaleDateString()}</td>
                     <td class="p-3">
                         <div class="flex gap-1 flex-wrap">
@@ -17288,7 +17289,7 @@
                     const statusIcon = b.status === 'Running' ? 'fa-circle-play' : 'fa-circle-stop';
                     const createdAt = new Date(b.createdAt).toLocaleString();
                     const runtime = b.startedAt && b.status === 'Running' ? ((Date.now() - b.startedAt) / 3600000).toFixed(2) + ' hr' : '-';
-                    const gemsUsed = b.gemsUsed !== undefined ? parseFloat(b.gemsUsed).toFixed(4) : '0';
+                    const gemsUsed = (parseFloat(b.gemsUsed) || 0).toFixed(2);
                     
                     return `<tr class="border-b border-white/5">
                         <td class="p-3">

@@ -16418,7 +16418,7 @@ window.showPassiveCardModal = showPassiveCardModal;
             </div>` : ''}
             <div style="background:rgba(167,139,250,0.07);border-radius:10px;padding:8px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
                 <span style="font-size:11px;color:var(--text-sub);font-weight:600;">💎 Gems used</span>
-                <span style="font-size:12px;font-weight:800;color:#a78bfa;">${bot.gemsUsed || 0}</span>
+                <span style="font-size:12px;font-weight:800;color:#a78bfa;">${(parseFloat(bot.gemsUsed) || 0).toFixed(2)} 💎</span>
             </div>
             <div style="display:flex;gap:8px;">
                 ${bot.adminLocked
@@ -17011,7 +17011,7 @@ async function loadPyrogramSessions() {
                             </div>
                             <div>
                                 <div style="font-size:9px; color:rgba(255,255,255,0.4); font-weight:800; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px;">Gems Charged</div>
-                                <div style="font-size:12px; font-family:monospace; color:#a78bfa; font-weight:700;">${(s.gemsUsed || 0).toFixed(6)} 💎</div>
+                                <div style="font-size:12px; font-family:monospace; color:#a78bfa; font-weight:700;">${(parseFloat(s.gemsUsed) || 0).toFixed(2)} 💎</div>
                             </div>
                         </div>
 
